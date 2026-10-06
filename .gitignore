@@ -2,6 +2,7 @@ bin/
 obj/
 artifacts/
 TestResults/
+.readme-samples/
 *.user
 *.suo
 .vs/
