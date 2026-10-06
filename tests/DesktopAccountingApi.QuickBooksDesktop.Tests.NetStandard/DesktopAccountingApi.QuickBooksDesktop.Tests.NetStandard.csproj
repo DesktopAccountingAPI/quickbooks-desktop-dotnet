@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Runs the same unit and conformance tests against the netstandard2.0 build of the SDK
+       (System.Text.Json package, Portable.System.DateTimeOnly, HttpClientHandler). -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>DesktopAccountingApi.QuickBooksDesktop.Tests.NetStandard</AssemblyName>
+    <RootNamespace>DesktopAccountingApi.QuickBooksDesktop.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA2007;CA1861;CA1845</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../DesktopAccountingApi.QuickBooksDesktop.Tests/**/*.cs" Exclude="../DesktopAccountingApi.QuickBooksDesktop.Tests/obj/**;../DesktopAccountingApi.QuickBooksDesktop.Tests/bin/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!-- The netstandard2.0 dependencies of the SDK (project references flow net8.0 dependencies only). -->
+    <PackageReference Include="System.Text.Json" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" />
+    <PackageReference Include="Portable.System.DateTimeOnly" Version="9.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/DesktopAccountingApi.QuickBooksDesktop/DesktopAccountingApi.QuickBooksDesktop.csproj" SetTargetFramework="TargetFramework=netstandard2.0" />
+  </ItemGroup>
+</Project>

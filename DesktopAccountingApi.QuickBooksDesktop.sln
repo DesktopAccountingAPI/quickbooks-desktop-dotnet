@@ -1,0 +1,52 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{83BC4E10-0CA7-47B4-9E92-792E19E1600F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesktopAccountingApi.QuickBooksDesktop", "src\DesktopAccountingApi.QuickBooksDesktop\DesktopAccountingApi.QuickBooksDesktop.csproj", "{7872B45C-CEE6-4EDE-922B-065C23C588CC}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{392ED453-166A-4153-BFE5-E7930524F273}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesktopAccountingApi.QuickBooksDesktop.Tests", "tests\DesktopAccountingApi.QuickBooksDesktop.Tests\DesktopAccountingApi.QuickBooksDesktop.Tests.csproj", "{27C2446C-6250-4FD9-909F-86F2CAE20262}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{A9EEADA1-26C9-4FCE-93D6-D22C21A42D9A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Quickstart", "examples\Quickstart\Quickstart.csproj", "{0FC3D7E7-5F59-45A0-A666-232F00C503DB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesktopAccountingApi.QuickBooksDesktop.Tests.NetStandard", "tests\DesktopAccountingApi.QuickBooksDesktop.Tests.NetStandard\DesktopAccountingApi.QuickBooksDesktop.Tests.NetStandard.csproj", "{31649CF6-E905-49CF-B8DB-5DEF981A7F95}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7872B45C-CEE6-4EDE-922B-065C23C588CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7872B45C-CEE6-4EDE-922B-065C23C588CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7872B45C-CEE6-4EDE-922B-065C23C588CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7872B45C-CEE6-4EDE-922B-065C23C588CC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{27C2446C-6250-4FD9-909F-86F2CAE20262}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{27C2446C-6250-4FD9-909F-86F2CAE20262}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{27C2446C-6250-4FD9-909F-86F2CAE20262}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{27C2446C-6250-4FD9-909F-86F2CAE20262}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0FC3D7E7-5F59-45A0-A666-232F00C503DB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0FC3D7E7-5F59-45A0-A666-232F00C503DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0FC3D7E7-5F59-45A0-A666-232F00C503DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0FC3D7E7-5F59-45A0-A666-232F00C503DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{31649CF6-E905-49CF-B8DB-5DEF981A7F95}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{31649CF6-E905-49CF-B8DB-5DEF981A7F95}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{31649CF6-E905-49CF-B8DB-5DEF981A7F95}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{31649CF6-E905-49CF-B8DB-5DEF981A7F95}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{7872B45C-CEE6-4EDE-922B-065C23C588CC} = {83BC4E10-0CA7-47B4-9E92-792E19E1600F}
+		{27C2446C-6250-4FD9-909F-86F2CAE20262} = {392ED453-166A-4153-BFE5-E7930524F273}
+		{0FC3D7E7-5F59-45A0-A666-232F00C503DB} = {A9EEADA1-26C9-4FCE-93D6-D22C21A42D9A}
+		{31649CF6-E905-49CF-B8DB-5DEF981A7F95} = {392ED453-166A-4153-BFE5-E7930524F273}
+	EndGlobalSection
+EndGlobal

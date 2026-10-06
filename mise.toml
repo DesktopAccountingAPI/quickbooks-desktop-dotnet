@@ -1,0 +1,25 @@
+[tools]
+dotnet = "8.0.425"
+node = "24.20.0"
+
+[env]
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+DOTNET_NOLOGO = "1"
+DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
+
+# Everything CI runs. Each command works in sh and cmd, so the same task runs on Linux and Windows.
+[tasks.check]
+description = "Restore, build both target frameworks, verify formatting, run unit + conformance tests, build examples, pack and inspect the NuGet package"
+run = [
+  "dotnet restore DesktopAccountingApi.QuickBooksDesktop.sln",
+  "dotnet build DesktopAccountingApi.QuickBooksDesktop.sln -c Release --no-restore",
+  "dotnet format whitespace DesktopAccountingApi.QuickBooksDesktop.sln --verify-no-changes --exclude src/DesktopAccountingApi.QuickBooksDesktop/Generated",
+  "dotnet test tests/DesktopAccountingApi.QuickBooksDesktop.Tests -c Release --no-build --logger \"console;verbosity=normal\"",
+  "dotnet test tests/DesktopAccountingApi.QuickBooksDesktop.Tests.NetStandard -c Release --no-build",
+  "dotnet pack src/DesktopAccountingApi.QuickBooksDesktop -c Release --no-build -o artifacts",
+  "node scripts/verify-package.mjs artifacts",
+]
+
+[tasks.publish]
+description = "Release to NuGet (CI). `mise run publish -- --dry-run` builds and shows what would be uploaded"
+run = "node scripts/publish.mjs release"
