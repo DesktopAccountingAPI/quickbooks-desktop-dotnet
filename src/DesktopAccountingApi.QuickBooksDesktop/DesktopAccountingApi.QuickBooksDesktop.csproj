@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <AssemblyName>DesktopAccountingApi.QuickBooksDesktop</AssemblyName>
+    <RootNamespace>DesktopAccountingApi.QuickBooksDesktop</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsTrimmable>false</IsTrimmable>
+    <!-- One source tree compiles for netstandard2.0 and net8.0; these suggest net8-only APIs
+         (ArgumentNullException.ThrowIfNull, span overloads, StartsWith(char)). -->
+    <NoWarn>$(NoWarn);CA1510;CA1846;CA1865</NoWarn>
+
+    <!-- Package. The ID matches the NuGet trusted-publishing policy glob DesktopAccountingAPI.* -->
+    <PackageId>DesktopAccountingAPI.QuickBooksDesktop</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Desktop Accounting API</Authors>
+    <Company>Desktop Accounting API</Company>
+    <Product>Desktop Accounting API .NET SDK</Product>
+    <Description>Official .NET SDK for Desktop Accounting API: a REST API for QuickBooks Desktop. Typed models and methods for every endpoint, automatic pagination, safe retries with idempotency keys, async requests and webhook verification.</Description>
+    <Copyright>Copyright (c) 2026 Desktop Accounting API</Copyright>
+    <PackageTags>quickbooks;quickbooks-desktop;qbxml;accounting;api;sdk;desktopaccountingapi</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://www.desktopaccountingapi.com/docs/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <DebugType>portable</DebugType>
+    <!-- Source Link (built into the .NET 8 SDK) needs a git checkout; generated staging copies have none. -->
+    <EnableSourceLink Condition="!Exists('$(MSBuildThisFileDirectory)../../.git')">false</EnableSourceLink>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Text.Json" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" />
+    <PackageReference Include="Portable.System.DateTimeOnly" Version="9.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DesktopAccountingApi.QuickBooksDesktop.Tests" />
+    <InternalsVisibleTo Include="DesktopAccountingApi.QuickBooksDesktop.Tests.NetStandard" />
+  </ItemGroup>
+</Project>

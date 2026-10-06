@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.nupkg binary
+*.snupkg binary
+src/DesktopAccountingApi.QuickBooksDesktop/Generated/** linguist-generated=true
+api.md linguist-generated=true
+conformance/fixtures/** linguist-generated=true

@@ -1,0 +1,70 @@
+name: Publish
+
+# Releases DesktopAccountingAPI.QuickBooksDesktop to nuget.org with NuGet trusted publishing
+# (GitHub OIDC -> short-lived API key; policy "desktopaccountingapi-sdk-publishing", package glob
+# DesktopAccountingAPI.*). The policy is bound to this file name, so keep it as publish.yml.
+# Re-running is safe: a version that is already on nuget.org is not uploaded again.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, for example v0.1.0 (default: the selected ref)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to NuGet
+    runs-on: ubuntu-latest
+    environment: release
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - uses: jdx/mise-action@v5
+
+      - name: Tag matches the package version
+        run: node scripts/publish.mjs verify-tag
+
+      - name: Full check (build, tests, conformance, examples, package)
+        run: mise run check
+
+      - name: Pack release artifacts
+        run: node scripts/publish.mjs pack
+
+      - name: Is this version already on nuget.org?
+        id: registry
+        run: node scripts/publish.mjs exists
+
+      - name: NuGet login (OIDC)
+        if: steps.registry.outputs.published != 'true'
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Upload package and symbols
+        if: steps.registry.outputs.published != 'true'
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: node scripts/publish.mjs push
+
+      - name: Wait until nuget.org serves the version
+        run: node scripts/publish.mjs wait --timeout-minutes 45
+
+      - name: Install from nuget.org and run a smoke program
+        run: node scripts/publish.mjs smoke
