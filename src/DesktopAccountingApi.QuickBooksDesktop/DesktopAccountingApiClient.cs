@@ -11,13 +11,13 @@ namespace DesktopAccountingApi.QuickBooksDesktop;
 public sealed partial class DesktopAccountingApiClient : IDisposable
 {
     /// <summary>This SDK's version.</summary>
-    public const string SdkVersion = "0.1.1";
+    public const string SdkVersion = "0.2.0";
 
     /// <summary>The API contract version this SDK was generated from.</summary>
     public const string ApiVersion = "1.0.0";
 
     /// <summary>SHA-256 of the OpenAPI contract this SDK was generated from.</summary>
-    public const string ContractSha256 = "1cc3058cecb557ce1cc724d5236d36860df6bec39636e2d427c8a408bf5f2ca2";
+    public const string ContractSha256 = "6f5ac28d7c33ac90aa7e2c15d88efd50e8e41c808bcc5489f0c8b1cb7833326a";
 
     /// <summary>Production API base URL.</summary>
     public const string DefaultBaseUrl = "https://api.desktopaccountingapi.com";
@@ -36,12 +36,13 @@ public sealed partial class DesktopAccountingApiClient : IDisposable
             throw new DaapiException("No API key: pass ClientOptions.ApiKey or set the DAAPI_SECRET_KEY environment variable to your secret key (sk_live_... or sk_test_...).");
         }
         ApiKeys.Validate(apiKey);
-        var baseUrl = (options.BaseUrl ?? Environment.GetEnvironmentVariable("DAAPI_BASE_URL") ?? DefaultBaseUrl).TrimEnd('/');
+        var baseUrl = NormalizeBaseUrl(options.BaseUrl ?? Environment.GetEnvironmentVariable("DAAPI_BASE_URL") ?? DefaultBaseUrl);
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
         {
             throw new DaapiException($"BaseUrl must be an absolute http(s) URL, got \"{baseUrl}\".");
         }
         if (options.Timeout <= TimeSpan.Zero) throw new DaapiException("Timeout must be positive.");
+        if (options.TotalTimeout <= TimeSpan.Zero) throw new DaapiException("TotalTimeout must be positive.");
         if (options.MaxRetries < 0) throw new DaapiException("MaxRetries must be zero or more.");
 
         HttpClient http;
@@ -57,7 +58,11 @@ public sealed partial class DesktopAccountingApiClient : IDisposable
             _ownedHttpClient.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
             http = _ownedHttpClient;
         }
-        Core = new ApiCore(http, apiKey, baseUrl, options.EndUserId, options.Timeout, options.MaxRetries, options.ServerTimeout, options.Logger);
+        Core = new ApiCore(http, apiKey, baseUrl, options.EndUserId, options.Timeout, options.MaxRetries, options.ServerTimeout, options.Logger)
+        {
+            TotalTimeout = options.TotalTimeout,
+            DefaultHeaders = ApiCore.CopyDefaultHeaders(options.DefaultHeaders),
+        };
         Webhooks = new WebhooksResource();
         InitResources(Core);
     }
@@ -94,6 +99,13 @@ public sealed partial class DesktopAccountingApiClient : IDisposable
     {
         if (string.IsNullOrEmpty(endUserId)) throw new ArgumentException("endUserId must be a non-empty string.", nameof(endUserId));
         return new DesktopAccountingApiClient(Core.WithEndUser(endUserId));
+    }
+
+    /// <summary>Removes trailing slashes and one trailing <c>/v1</c>: the SDK adds <c>/v1/...</c> itself.</summary>
+    private static string NormalizeBaseUrl(string url)
+    {
+        var trimmed = url.TrimEnd('/');
+        return trimmed.EndsWith("/v1", StringComparison.Ordinal) ? trimmed.Substring(0, trimmed.Length - 3) : trimmed;
     }
 
     /// <summary>Disposes the HTTP client the SDK created. A client you passed in <see cref="ClientOptions.HttpClient"/> is left open.</summary>

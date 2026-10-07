@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.1.1**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.2.0**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.1.1
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.2.0
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.1.1" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.2.0" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -85,7 +85,7 @@ A QuickBooks call without an end user throws `DaapiException` before anything is
 
 ### List records with auto-pagination
 
-`await foreach` walks every page. The SDK requests the next page while you process the current one, so slow loop bodies stay inside the QuickBooks cursor's idle window.
+`await foreach` walks every page. The next page is requested only when the loop needs it, so a loop that stops early never runs an extra QuickBooks query. If you hold a page for more than 2 seconds, the SDK requests the next one in the background, so slow loop bodies stay inside the QuickBooks cursor's idle window.
 
 ```csharp
 await foreach (var customer in client.Qbd.Customers.ListAsync(new CustomerListParams { Limit = 100, UpdatedAfter = "2026-01-01" }))
@@ -240,23 +240,25 @@ using var patient = new DesktopAccountingApiClient(new ClientOptions
 await patient.Qbd.Invoices.RetrieveAsync("7-1700000000", new RequestOptions { EndUserId = "eu_01j9x4m6v4c8k2t7q0r5s3w1zb", MaxRetries = 0 });
 ```
 
-`Timeout` is the client's limit per HTTP attempt; `ServerTimeout` is how long the API waits for QuickBooks. Reads and writes retry only when it is safe; see [Retries and idempotency](#retries-and-idempotency) and [Timeouts](#timeouts).
+`Timeout` is the client's limit per HTTP attempt; `TotalTimeout` caps a whole call including retries; `ServerTimeout` is how long the API waits for QuickBooks. Reads and writes retry only when it is safe; see [Retries and idempotency](#retries-and-idempotency) and [Timeouts](#timeouts).
 
 ## Configuration
 
 | `ClientOptions` property | Default | Meaning |
 | --- | --- | --- |
 | `ApiKey` | `DAAPI_SECRET_KEY` | Secret key, `sk_live_...` or `sk_test_...`. Checked locally (format and checksum) when the client is created; a malformed key throws `DaapiException` before any request. |
-| `BaseUrl` | `DAAPI_BASE_URL`, else `https://api.desktopaccountingapi.com` | API base URL. May include a path prefix. |
+| `BaseUrl` | `DAAPI_BASE_URL`, else `https://api.desktopaccountingapi.com` | API base URL. May include a path prefix. A trailing `/v1` is removed, so `https://api.desktopaccountingapi.com/v1` works too. |
 | `EndUserId` | none | Default end user (`eu_...`) for QuickBooks Desktop operations. |
-| `Timeout` | 100 s | Client-side timeout per HTTP attempt, and the total wait for a request that timed out on the server. |
+| `Timeout` | 100 s | Client-side timeout per HTTP attempt; each retry gets a fresh one. Without `TotalTimeout`, also the total wait for a request that timed out on the server. |
+| `TotalTimeout` | none | Time budget of a whole call: attempts, retry backoff and the wait for a pending request. |
 | `MaxRetries` | 2 | Retries after network errors, `429` and retryable `5xx`. `0` disables retries. |
 | `ServerTimeout` | server default | Sent as `Daapi-Timeout-Seconds` on operations that accept it. |
+| `DefaultHeaders` | none | Headers sent with every request. The headers the SDK manages (`Authorization`, `Accept`, `Content-Type`, `User-Agent`, `Daapi-End-User-Id`, `Idempotency-Key`, `Daapi-Timeout-Seconds`, `Prefer`) are ignored here. |
 | `HttpClient` | SDK-owned | Your own `HttpClient`. The SDK does not dispose it or change its settings. |
 | `HttpMessageHandler` | SDK-owned | A handler for the SDK's `HttpClient` (proxy, instrumentation, test double). |
 | `Logger` | none | `Action<DaapiLogLevel, string>`: one line per HTTP attempt, retry and long poll. The SDK never logs the API key, the `Authorization` header or request and response bodies. |
 
-Every method takes an optional `RequestOptions` (`EndUserId`, `IdempotencyKey`, `Timeout`, `MaxRetries`, `ServerTimeout`, `QueueTtl`) and a `CancellationToken`.
+Every method takes an optional `RequestOptions` (`EndUserId`, `IdempotencyKey`, `Timeout`, `TotalTimeout`, `MaxRetries`, `ServerTimeout`, `QueueTtl`) and a `CancellationToken`.
 
 ## Inputs: omitted, set and null
 
@@ -291,7 +293,7 @@ await foreach (var p in client.Qbd.Customers.ListAsync().PagesAsync()) Console.W
 List<Customer> all = await client.Qbd.Customers.ListAsync().ListAllAsync();
 ```
 
-Continue requests send only `cursor` (and `limit` if you set one). A network error on a continue request retries the same cursor, which returns the same page.
+Continue requests send only `cursor` (and `limit` if you set one). The next page is requested only when the iteration reaches it, so `break`ing out of a loop never sends an extra QuickBooks query. While `await foreach` hands you items, a page held for more than 2 seconds makes the SDK request the next page in the background, which keeps slow loops inside the cursor's idle window. `PagesAsync()` requests each page when you ask for it; `ListAllAsync()` always requests the next page as soon as a page arrives. A network error on a continue request retries the same cursor, which returns the same page.
 
 QuickBooks cursors live inside one QuickBooks session and expire when it ends or after an idle period. Then iteration throws `CursorExpiredException` with `ItemsYielded`, `PagesServed`, `LastId`, `LastUpdatedAt` (as the API sent it) and `Reason`. The SDK never restarts a list on its own, because records may have changed in the meantime. Restart with a watermark and skip what you already have:
 
@@ -362,12 +364,13 @@ Every write (create, update, delete, void, passthrough) sends an `Idempotency-Ke
 
 ## Timeouts
 
-There are two timeouts:
+There are three timeouts:
 
-- **Client timeout** (`ClientOptions.Timeout` / `RequestOptions.Timeout`, default 100 s): how long the SDK waits for each HTTP attempt.
+- **Client timeout** (`ClientOptions.Timeout` / `RequestOptions.Timeout`, default 100 s): how long the SDK waits for each HTTP attempt. A retry starts a new attempt with a fresh timeout, so with retries a call can take longer.
+- **Total timeout** (`ClientOptions.TotalTimeout` / `RequestOptions.TotalTimeout`, no default): the whole call, including every attempt, the waits between retries and the wait for a pending request. An attempt still running when it ends is cancelled (`ApiTimeoutException`), and no retry starts that could not finish in time.
 - **Server timeout** (`ServerTimeout`, sent as `Daapi-Timeout-Seconds`): how long the API waits for QuickBooks before answering `504 QBD_REQUEST_TIMEOUT`.
 
-After `504 QBD_REQUEST_TIMEOUT` the request is still queued or running at the end user's QuickBooks. The SDK does not resend it. It long-polls `GET /v1/requests/{id}?waitSeconds=N` until the call's client timeout has passed since the call started. When the request succeeds you get the normal typed result; when it fails you get the typed exception; when time runs out you get `RequestPendingException` with `RequestId`:
+After `504 QBD_REQUEST_TIMEOUT` the request is still queued or running at the end user's QuickBooks. The SDK does not resend it. It long-polls `GET /v1/requests/{id}?waitSeconds=N` until the call's deadline (`TotalTimeout`, else the client timeout) has passed since the call started. When the request succeeds you get the normal typed result; when it fails you get the typed exception; when time runs out you get `RequestPendingException` with `RequestId`:
 
 ```csharp
 try
@@ -429,13 +432,61 @@ string xml = await client.EndUsers.PassthroughXmlAsync("eu_01j9x4m6v4c8k2t7q0r5s
 
 Passthrough calls always send an idempotency key, because a body with anything other than a query element is a write.
 
+## Porting from Conductor
+
+Conductor publishes no .NET SDK, so .NET code written against Conductor calls its REST API directly. This SDK sends the same paths, parameters and JSON field names; the table maps the Conductor pieces to the SDK.
+
+| Conductor (REST or `conductor-node`) | This SDK |
+| --- | --- |
+| `https://api.conductor.is/v1` base URL | `BaseUrl` (a trailing `/v1` is accepted) |
+| `Authorization: Bearer sk_conductor_...` | `ApiKey` or `DAAPI_SECRET_KEY` (`sk_test_...`, `sk_live_...`) |
+| `Conductor-End-User-Id` header, `conductorEndUserId` parameter | `ClientOptions.EndUserId`, `client.ForEndUser(...)` or `RequestOptions.EndUserId` |
+| `Conductor-Timeout-Seconds` header | `ServerTimeout` |
+| `timeout`, `maxRetries` | `Timeout` (per attempt), `MaxRetries`; plus `TotalTimeout` for the whole call |
+| `defaultHeaders`, custom `fetch` | `DefaultHeaders`, `HttpClient` / `HttpMessageHandler` |
+| `logLevel` / `logger` | `Logger` (`Action<DaapiLogLevel, string>`) |
+| `nextCursor` loops | `await foreach` over the `Pager<T>`; the next page is requested only when needed |
+| Error body `error.code`, `type`, `userFacingMessage`, `httpStatusCode`, `integrationCode`, `requestId` | `ApiException.Code`, `Type`, `UserFacingMessage`, `HttpStatusCode`, `IntegrationCode`, `RequestId`, plus `Cause`, `Fixes`, `DocsUrl`, `Outcome`, `Retryable` |
+| `NotFoundError`, `BadRequestError` and other status classes | the exception for the error `type`; filter on `ApiException.Status` when you need the HTTP status |
+
+```csharp
+// Before: HttpClient calls to https://api.conductor.is/v1 with Conductor-End-User-Id.
+using var conductor = new DesktopAccountingApiClient(new ClientOptions
+{
+    BaseUrl = "https://api.desktopaccountingapi.com/v1",
+    Timeout = TimeSpan.FromSeconds(120),
+    MaxRetries = 2,
+    DefaultHeaders = new Dictionary<string, string> { ["X-Trace-Id"] = "billing-sync" },
+});
+var endUser = conductor.ForEndUser("eu_01j9x4m6v4c8k2t7q0r5s3w1zb");
+try
+{
+    await foreach (var invoice in endUser.Qbd.Invoices.ListAsync(new InvoiceListParams { Limit = 50 }))
+    {
+        Console.WriteLine($"{invoice.RefNumber} {invoice.Subtotal}");
+    }
+    await endUser.Qbd.Invoices.RetrieveAsync("7-1700000000");
+}
+catch (ApiException ex) when (ex.Status == 404)
+{
+    Console.WriteLine($"Not found: {ex.Code} (request {ex.RequestId})");
+}
+catch (ApiException ex)
+{
+    ShowToEndUser(ex.UserFacingMessage ?? ex.Message);
+    Console.WriteLine($"{ex.Type} {ex.Code} {ex.HttpStatusCode} {ex.IntegrationCode} {ex.RequestId}");
+}
+```
+
+What changes beyond names: every write carries an `Idempotency-Key`, only safe failures are retried (see [Retries and idempotency](#retries-and-idempotency)), and end-user IDs are ours (`eu_...`). The [migration guide](https://www.desktopaccountingapi.com/docs/get-started/migrating-from-conductor/) covers the API-level differences.
+
 ## Versioning and changelog
 
 - The package follows [semantic versioning](https://semver.org/). Only a major version removes or renames anything in the SDK's public API.
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `1cc3058cecb5...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `6f5ac28d7c33...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 

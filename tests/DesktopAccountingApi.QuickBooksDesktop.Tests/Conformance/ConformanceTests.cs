@@ -73,6 +73,8 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
     {
         var root = Fixtures.Scenarios;
         var sc = root.GetProperty("scenarios").EnumerateArray().Single(s => s.GetProperty("name").GetString() == name);
+        // Scenarios limited to other SDKs (Conductor-named options that exist only there).
+        if (sc.TryGetProperty("only", out var only) && !only.EnumerateArray().Any(o => o.GetString() == "dotnet")) return;
         await _server.ResetAsync(name);
 
         var observed = new Observed();
@@ -115,14 +117,21 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         var endUser = Pick("endUserId");
         var maxRetries = Pick("maxRetries");
         var timeoutMs = Pick("timeoutMs");
-        return new DesktopAccountingApiClient(new ClientOptions
+        var has = overrides.ValueKind == JsonValueKind.Object;
+        var options = new ClientOptions
         {
             ApiKey = apiKey,
-            BaseUrl = baseUrl,
+            BaseUrl = baseUrl + (has && overrides.TryGetProperty("baseUrlSuffix", out var suffix) ? suffix.GetString() : ""),
             EndUserId = endUser.ValueKind == JsonValueKind.String ? endUser.GetString() : null,
             MaxRetries = maxRetries.ValueKind == JsonValueKind.Number ? maxRetries.GetInt32() : 2,
             Timeout = timeoutMs.ValueKind == JsonValueKind.Number ? TimeSpan.FromMilliseconds(timeoutMs.GetInt32()) : TimeSpan.FromSeconds(100),
-        });
+        };
+        if (has && overrides.TryGetProperty("defaultHeaders", out var headers))
+        {
+            options.DefaultHeaders = headers.EnumerateObject().ToDictionary(h => h.Name, h => h.Value.GetString()!);
+        }
+        if (has && overrides.TryGetProperty("totalTimeoutMs", out var total)) options.TotalTimeout = TimeSpan.FromMilliseconds(total.GetInt32());
+        return new DesktopAccountingApiClient(options);
     }
 
     private static T? Params<T>(JsonElement call) where T : class =>
@@ -147,13 +156,14 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         var op = call.GetProperty("op").GetString();
         var kind = call.GetProperty("kind").GetString();
         var options = Options(call);
+        int? take = call.TryGetProperty("take", out var t) ? t.GetInt32() : null;
         switch (op, kind)
         {
             case ("qbd.invoices.list", "iterate" or "firstPage"):
-                await RunPager(client.Qbd.Invoices.ListAsync(Params<InvoiceListParams>(call), options), kind, observed);
+                await RunPager(client.Qbd.Invoices.ListAsync(Params<InvoiceListParams>(call), options), kind, take, observed);
                 break;
             case ("endUsers.list", "iterate" or "firstPage"):
-                await RunPager(client.EndUsers.ListAsync(Params<EndUserListParams>(call), options), kind, observed);
+                await RunPager(client.EndUsers.ListAsync(Params<EndUserListParams>(call), options), kind, take, observed);
                 break;
             case ("qbd.invoices.create", "call"):
                 observed.Result = await client.Qbd.Invoices.CreateAsync(Params<InvoiceCreateInput>(call)!, options);
@@ -196,7 +206,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         }
     }
 
-    private static async Task RunPager<T>(Pager<T> pager, string? kind, Observed observed)
+    private static async Task RunPager<T>(Pager<T> pager, string? kind, int? take, Observed observed)
     {
         if (kind == "firstPage")
         {
@@ -210,7 +220,11 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             };
             return;
         }
-        await foreach (var item in pager) observed.Items.Add(IdOf(item));
+        await foreach (var item in pager)
+        {
+            observed.Items.Add(IdOf(item));
+            if (take is { } n && observed.Items.Count >= n) break;
+        }
     }
 
     private static string? IdOf<T>(T item)
