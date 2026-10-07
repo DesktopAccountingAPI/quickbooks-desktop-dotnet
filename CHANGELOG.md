@@ -9,7 +9,7 @@
 
 ## 0.1.0
 
-First release, generated from API contract 1.0.0 (sha256 `6f5ac28d7c33`).
+First release, generated from API contract 1.0.0 (sha256 `b5774d24bc81`).
 
 - `DesktopAccountingApiClient` with typed async methods for all 275 operations, `ForEndUser`, per-call `RequestOptions` and `...WithResponseAsync` raw-response variants.
 - Typed models and inputs: `decimal` money with preserved scale, `DateOnly` dates, `DateTimeOffset` timestamps, open enums as strings with constants, inputs that send only what you set (explicit `null` clears).
