@@ -115,24 +115,129 @@ public class ClientTests
         Assert.Null(StubHandler.Header(stub.Requests[2].Request, "Daapi-End-User-Id"));
     }
 
+    private const string Page1 = "{\"data\":[{\"id\":\"1\"},{\"id\":\"2\"}],\"nextCursor\":\"c2\",\"hasMore\":true,\"remainingCount\":1}";
+    private const string Page2 = "{\"data\":[{\"id\":\"3\"}],\"nextCursor\":null,\"hasMore\":false}";
+
     [Fact]
-    public async Task Pager_reads_ahead_and_continues_with_cursor_and_limit_only()
+    public async Task Pager_requests_the_next_page_when_needed_and_continues_with_cursor_and_limit_only()
     {
-        var stub = new StubHandler()
-            .Respond(200, "{\"data\":[{\"id\":\"1\"},{\"id\":\"2\"}],\"nextCursor\":\"c2\",\"hasMore\":true,\"remainingCount\":1}")
-            .Respond(200, "{\"data\":[{\"id\":\"3\"}],\"nextCursor\":null,\"hasMore\":false}");
+        var stub = new StubHandler().Respond(200, Page1).Respond(200, Page2);
         using var client = stub.Client();
         var pager = client.Qbd.Invoices.ListAsync(new InvoiceListParams { Limit = 2, CustomerIds = new[] { "c" } });
         var seen = new List<string>();
         await foreach (var invoice in pager)
         {
             seen.Add(invoice.Id);
-            // Read-ahead: page 2 was requested before the caller finished page 1.
-            if (invoice.Id == "1") Assert.Equal(2, stub.Requests.Count);
+            // A fast consumer gets no read-ahead: page 2 is requested after page 1 is done.
+            if (invoice.Id == "2") Assert.Single(stub.Requests);
         }
         Assert.Equal(new[] { "1", "2", "3" }, seen);
         Assert.Equal("https://api.example.test/base/v1/quickbooks-desktop/invoices?limit=2&customerIds=c", stub.Requests[0].Request.RequestUri!.ToString());
         Assert.Equal("https://api.example.test/base/v1/quickbooks-desktop/invoices?cursor=c2&limit=2", stub.Requests[1].Request.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task Loop_that_stops_early_sends_no_extra_request()
+    {
+        foreach (var stopAt in new[] { "1", "2" })
+        {
+            var stub = new StubHandler().Respond(200, Page1);
+            using var client = stub.Client();
+            await foreach (var invoice in client.Qbd.Invoices.ListAsync(new InvoiceListParams { Limit = 2 }))
+            {
+                if (invoice.Id == stopAt) break;
+            }
+            await Task.Delay(20);
+            Assert.Single(stub.Requests);
+        }
+        var pages = new StubHandler().Respond(200, Page1);
+        using (var client = pages.Client())
+        {
+            await foreach (var page in client.Qbd.Invoices.ListAsync().PagesAsync()) break;
+        }
+        Assert.Single(pages.Requests);
+    }
+
+    [Fact]
+    public async Task Slow_consumer_gets_the_next_page_in_the_background()
+    {
+        var saved = Pager<Invoice>.ReadAheadAfter;
+        Pager<Invoice>.ReadAheadAfter = TimeSpan.Zero;
+        try
+        {
+            var stub = new StubHandler().Respond(200, Page1).Respond(200, Page2);
+            using var client = stub.Client();
+            var seen = new List<string>();
+            await foreach (var invoice in client.Qbd.Invoices.ListAsync(new InvoiceListParams { Limit = 2 }))
+            {
+                seen.Add(invoice.Id);
+                if (invoice.Id == "1") Assert.Equal(2, stub.Requests.Count);
+            }
+            Assert.Equal(new[] { "1", "2", "3" }, seen);
+            Assert.Equal(2, stub.Requests.Count);
+        }
+        finally
+        {
+            Pager<Invoice>.ReadAheadAfter = saved;
+        }
+    }
+
+    [Fact]
+    public async Task ListAll_reads_ahead()
+    {
+        var stub = new StubHandler().Respond(200, Page1).Respond(200, Page2);
+        using var client = stub.Client();
+        var all = await client.Qbd.Invoices.ListAsync().ListAllAsync();
+        Assert.Equal(new[] { "1", "2", "3" }, all.Select(i => i.Id));
+    }
+
+    [Fact]
+    public async Task Base_url_ending_in_v1_is_normalized()
+    {
+        var stub = new StubHandler().Respond(200, "{\"status\":\"ok\",\"duration\":1}");
+        using var client = new DesktopAccountingApiClient(new ClientOptions
+        {
+            ApiKey = StubHandler.Key,
+            BaseUrl = "https://api.example.test/base/v1/",
+            EndUserId = "eu_test",
+            HttpMessageHandler = stub,
+        });
+        Assert.Equal("https://api.example.test/base", client.BaseUrl);
+        await client.Qbd.HealthCheckAsync();
+        Assert.Equal("https://api.example.test/base/v1/quickbooks-desktop/health-check", stub.Requests[0].Request.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task Default_headers_are_sent_and_sdk_headers_win()
+    {
+        var stub = new StubHandler().Respond(200, "{\"id\":\"1\"}").Respond(200, "{\"id\":\"1\"}");
+        using var client = new DesktopAccountingApiClient(new ClientOptions
+        {
+            ApiKey = StubHandler.Key,
+            BaseUrl = "https://api.example.test/base",
+            EndUserId = "eu_test",
+            HttpMessageHandler = stub,
+            DefaultHeaders = new Dictionary<string, string> { ["X-Team"] = "billing", ["Authorization"] = "Bearer nope", ["Daapi-End-User-Id"] = "eu_header" },
+        });
+        await client.Qbd.Customers.RetrieveAsync("1");
+        await client.ForEndUser("eu_other").Qbd.Customers.RetrieveAsync("1");
+        var request = stub.Requests[0].Request;
+        Assert.Equal("billing", StubHandler.Header(request, "X-Team"));
+        Assert.Equal("Bearer " + StubHandler.Key, StubHandler.Header(request, "Authorization"));
+        Assert.Equal("eu_test", StubHandler.Header(request, "Daapi-End-User-Id"));
+        Assert.Equal("billing", StubHandler.Header(stub.Requests[1].Request, "X-Team"));
+    }
+
+    [Fact]
+    public async Task Total_timeout_stops_retries_that_would_end_after_it()
+    {
+        var stub = new StubHandler()
+            .Respond(503, "{\"error\":{\"type\":\"INTEGRATION_CONNECTION_ERROR\",\"code\":\"QBD_MODAL_DIALOG_OPEN\",\"outcome\":\"not_applied\"}}", ("Daapi-Should-Retry", "true"), ("Retry-After", "3"))
+            .Respond(200, "{\"id\":\"1\"}");
+        using var client = stub.Client();
+        await Assert.ThrowsAsync<IntegrationConnectionException>(() => client.Qbd.Customers.RetrieveAsync("1", new RequestOptions { TotalTimeout = TimeSpan.FromSeconds(1) }));
+        Assert.Single(stub.Requests);
+        await Assert.ThrowsAsync<DaapiException>(() => client.Qbd.Customers.RetrieveAsync("1", new RequestOptions { TotalTimeout = TimeSpan.Zero }));
     }
 
     [Fact]

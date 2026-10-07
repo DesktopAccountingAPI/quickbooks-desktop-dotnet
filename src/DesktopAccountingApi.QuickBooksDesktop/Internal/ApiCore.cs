@@ -60,6 +60,27 @@ internal sealed class ApiCore
     internal string BaseUrl { get; }
     internal string? EndUserId { get; }
     internal TimeSpan Timeout { get; }
+    internal TimeSpan? TotalTimeout { get; set; }
+    internal IReadOnlyList<KeyValuePair<string, string>> DefaultHeaders { get; set; } = Array.Empty<KeyValuePair<string, string>>();
+
+    private static readonly HashSet<string> s_managedHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Authorization", "Accept", "Content-Type", "User-Agent", "Daapi-End-User-Id", "Conductor-End-User-Id",
+        "Idempotency-Key", "Daapi-Timeout-Seconds", "Prefer", "Daapi-Queue-Ttl-Seconds",
+    };
+
+    /// <summary>The caller's default headers without the ones the SDK manages.</summary>
+    internal static IReadOnlyList<KeyValuePair<string, string>> CopyDefaultHeaders(IDictionary<string, string>? headers)
+    {
+        if (headers is null) return Array.Empty<KeyValuePair<string, string>>();
+        var list = new List<KeyValuePair<string, string>>();
+        foreach (var h in headers)
+        {
+            if (string.IsNullOrEmpty(h.Key) || h.Value is null) throw new DaapiException("DefaultHeaders must map header names to values.");
+            if (!s_managedHeaders.Contains(h.Key)) list.Add(h);
+        }
+        return list;
+    }
     internal int MaxRetries { get; }
     internal TimeSpan? ServerTimeout { get; }
     internal Action<DaapiLogLevel, string>? Logger { get; }
@@ -79,7 +100,13 @@ internal sealed class ApiCore
     }
 
     internal ApiCore WithEndUser(string endUserId) =>
-        new(_http, _authorization.Substring("Bearer ".Length), BaseUrl, endUserId, Timeout, MaxRetries, ServerTimeout, Logger) { Delay = Delay, Jitter = Jitter };
+        new(_http, _authorization.Substring("Bearer ".Length), BaseUrl, endUserId, Timeout, MaxRetries, ServerTimeout, Logger)
+        {
+            Delay = Delay,
+            Jitter = Jitter,
+            TotalTimeout = TotalTimeout,
+            DefaultHeaders = DefaultHeaders,
+        };
 
     internal static string PathSegment(string value, string name)
     {
@@ -91,9 +118,10 @@ internal sealed class ApiCore
 
     private sealed class Call
     {
-        public Call(OperationInfo op, string? endUserId, string? idempotencyKey, TimeSpan timeout, int maxRetries, TimeSpan? serverTimeout, TimeSpan? queueTtl, bool async)
+        public Call(OperationInfo op, string? endUserId, string? idempotencyKey, TimeSpan timeout, TimeSpan? totalTimeout, int maxRetries, TimeSpan? serverTimeout, TimeSpan? queueTtl, bool async)
         {
             Op = op;
+            TotalTimeout = totalTimeout;
             EndUserId = endUserId;
             IdempotencyKey = idempotencyKey;
             Timeout = timeout;
@@ -108,14 +136,21 @@ internal sealed class ApiCore
         public string? EndUserId { get; }
         public string? IdempotencyKey { get; }
         public TimeSpan Timeout { get; }
+        public TimeSpan? TotalTimeout { get; }
         public int MaxRetries { get; }
         public TimeSpan? ServerTimeout { get; }
         public TimeSpan? QueueTtl { get; }
         public bool Async { get; }
         public Stopwatch Clock { get; }
+
+        /// <summary>Time left of the total timeout, or <c>null</c> without one.</summary>
+        public TimeSpan? Remaining => TotalTimeout is { } total ? total - Clock.Elapsed : null;
+
+        /// <summary>The wait budget for a pending request: the total timeout if set, else the attempt timeout.</summary>
+        public TimeSpan PendingBudget => TotalTimeout ?? Timeout;
     }
 
-    private Call Begin(OperationInfo op, RequestOptions? options, bool async)
+    private Call Begin(OperationInfo op, RequestOptions? options, bool async, bool totalTimeout = true)
     {
         var endUserId = options?.EndUserId ?? EndUserId;
         if (op.RequiresEndUser && string.IsNullOrEmpty(endUserId))
@@ -124,10 +159,12 @@ internal sealed class ApiCore
         }
         var timeout = options?.Timeout ?? Timeout;
         if (timeout <= TimeSpan.Zero) throw new DaapiException("Timeout must be positive.");
+        var total = totalTimeout ? options?.TotalTimeout ?? TotalTimeout : null;
+        if (total <= TimeSpan.Zero) throw new DaapiException("TotalTimeout must be positive.");
         var maxRetries = options?.MaxRetries ?? MaxRetries;
         if (maxRetries < 0) throw new DaapiException("MaxRetries must be zero or more.");
         var key = op.Write ? (options?.IdempotencyKey ?? Guid.NewGuid().ToString("D")) : null;
-        return new Call(op, op.RequiresEndUser ? endUserId : null, key, timeout, maxRetries, options?.ServerTimeout ?? ServerTimeout, options?.QueueTtl, async);
+        return new Call(op, op.RequiresEndUser ? endUserId : null, key, timeout, total, maxRetries, options?.ServerTimeout ?? ServerTimeout, options?.QueueTtl, async);
     }
 
     private sealed class RawResponse
@@ -203,7 +240,8 @@ internal sealed class ApiCore
 
     internal async Task<(Request Request, IReadOnlyDictionary<string, string> Headers, int Status)> GetRequestAsync(string requestId, int? waitSeconds, RequestOptions? options, CancellationToken cancellationToken)
     {
-        var call = Begin(RequestsRetrieve, options, async: false);
+        // A long poll is sized by its caller's deadline (waitSeconds); the total timeout does not cut it short.
+        var call = Begin(RequestsRetrieve, options, async: false, totalTimeout: waitSeconds is null);
         var query = new List<KeyValuePair<string, string>>();
         if (waitSeconds is { } w) query.Add(new KeyValuePair<string, string>("waitSeconds", w.ToString(CultureInfo.InvariantCulture)));
         var attemptTimeout = waitSeconds is { } s ? TimeSpan.FromSeconds(s + 10) : call.Timeout;
@@ -214,7 +252,7 @@ internal sealed class ApiCore
 
     internal async Task<T> WaitForResultAsync<T>(string requestId, Request? last, Func<string, T> parse, TimeSpan? timeout, RequestOptions? options, CancellationToken cancellationToken)
     {
-        var budget = timeout ?? options?.Timeout ?? Timeout;
+        var budget = timeout ?? options?.TotalTimeout ?? TotalTimeout ?? options?.Timeout ?? Timeout;
         var (result, _, _) = await PollAsync(requestId, last, parse, Stopwatch.StartNew(), budget, options, cancellationToken).ConfigureAwait(false);
         return result;
     }
@@ -273,7 +311,7 @@ internal sealed class ApiCore
             var requestId = rid.GetString()!;
             Log(DaapiLogLevel.Info, $"{call.Op.Id} timed out on the server; collecting request {requestId} without resending.");
             var options = new RequestOptions { MaxRetries = call.MaxRetries, Timeout = call.Timeout };
-            var (json, headers, status) = await PollAsync(requestId, null, s => s, call.Clock, call.Timeout, options, cancellationToken).ConfigureAwait(false);
+            var (json, headers, status) = await PollAsync(requestId, null, s => s, call.Clock, call.PendingBudget, options, cancellationToken).ConfigureAwait(false);
             return (json, new RawResponse(status, headers, json));
         }
         Log(DaapiLogLevel.Warning, $"{call.Op.Id} failed: HTTP {raw.Status} {error.Code} (request {error.RequestId}).");
@@ -285,12 +323,18 @@ internal sealed class ApiCore
         for (var attempt = 0; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var thisAttempt = attemptTimeout;
+            if (call.Remaining is { } remaining)
+            {
+                if (remaining <= TimeSpan.Zero) throw new ApiTimeoutException($"{call.Op.Id}: the call's total timeout ended before a response arrived.", null);
+                if (remaining < thisAttempt) thisAttempt = remaining;
+            }
             var started = Stopwatch.StartNew();
             DaapiException? failure;
             using (var request = BuildRequest(call, method, url, body, contentType, accept))
             using (var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
-                cts.CancelAfter(attemptTimeout);
+                cts.CancelAfter(thisAttempt);
                 try
                 {
                     using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, cts.Token).ConfigureAwait(false);
@@ -303,13 +347,14 @@ internal sealed class ApiCore
                     Log(DaapiLogLevel.Debug, $"{method} {PathOf(url)} -> {raw.Status} in {started.ElapsedMilliseconds} ms (request {raw.Header("Daapi-Request-Id")})");
                     if (raw.Success || attempt >= call.MaxRetries || !ShouldRetry(raw)) return raw;
                     var delay = RetryAfter(raw.Header("Retry-After")) ?? Backoff(attempt);
+                    if (call.Remaining is { } left && delay >= left) return raw;
                     Log(DaapiLogLevel.Info, $"Retrying {call.Op.Id} after HTTP {raw.Status} in {delay.TotalMilliseconds:F0} ms (attempt {attempt + 2} of {call.MaxRetries + 1}).");
                     await Delay(delay, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
                 {
-                    failure = new ApiTimeoutException($"{call.Op.Id}: no response within {attemptTimeout.TotalSeconds:0.###} s.", ex);
+                    failure = new ApiTimeoutException($"{call.Op.Id}: no response within {thisAttempt.TotalSeconds:0.###} s.", ex);
                 }
                 catch (HttpRequestException ex)
                 {
@@ -322,6 +367,7 @@ internal sealed class ApiCore
             }
             if (attempt >= call.MaxRetries) throw failure;
             var wait = Backoff(attempt);
+            if (call.Remaining is { } budget && wait >= budget) throw failure;
             Log(DaapiLogLevel.Info, $"Retrying {call.Op.Id} after a network error in {wait.TotalMilliseconds:F0} ms (attempt {attempt + 2} of {call.MaxRetries + 1}).");
             await Delay(wait, cancellationToken).ConfigureAwait(false);
         }
@@ -331,6 +377,7 @@ internal sealed class ApiCore
     {
         var request = new HttpRequestMessage(method, url);
         var h = request.Headers;
+        foreach (var header in DefaultHeaders) h.TryAddWithoutValidation(header.Key, header.Value);
         h.TryAddWithoutValidation("Authorization", _authorization);
         h.TryAddWithoutValidation("User-Agent", UserAgent);
         h.TryAddWithoutValidation("Accept", accept);

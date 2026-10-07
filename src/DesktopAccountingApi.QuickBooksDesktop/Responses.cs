@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
@@ -106,10 +107,13 @@ public sealed class Page<T>
 }
 
 /// <summary>
-/// Lazily iterates a cursor-paginated list. <c>await foreach</c> yields every item across pages and
-/// requests page N+1 as soon as page N arrives (one page of read-ahead) to stay inside the cursor's
-/// idle window. A network error on a continue request retries the same cursor. An expired cursor
-/// raises <see cref="CursorExpiredException"/> with progress fields; the pager never restarts silently.
+/// Lazily iterates a cursor-paginated list. <c>await foreach</c> yields every item across pages.
+/// The next page is requested only when the iteration needs it, so a loop that stops early sends no
+/// extra QuickBooks query. While you work through a page item by item, the next page is requested in
+/// the background once the page has been in hand for 2 seconds, so slow consumers stay inside the
+/// cursor's idle window (about 10 seconds). <see cref="ListAllAsync"/> always reads one page ahead.
+/// A network error on a continue request retries the same cursor. An expired cursor raises
+/// <see cref="CursorExpiredException"/> with progress fields; the pager never restarts silently.
 /// </summary>
 /// <typeparam name="T">The item type.</typeparam>
 public sealed class Pager<T> : IAsyncEnumerable<T>
@@ -123,6 +127,9 @@ public sealed class Pager<T> : IAsyncEnumerable<T>
         _token = cancellationToken;
     }
 
+    /// <summary>How long the item iterator holds a page before it requests the next one in the background. Tests lower it.</summary>
+    internal static TimeSpan ReadAheadAfter { get; set; } = TimeSpan.FromSeconds(2);
+
     /// <summary>Fetches only the first page.</summary>
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>The first page.</returns>
@@ -132,19 +139,36 @@ public sealed class Pager<T> : IAsyncEnumerable<T>
         return await _fetch(null, linked.Token).ConfigureAwait(false);
     }
 
-    /// <summary>Iterates page by page (with one page of read-ahead).</summary>
+    /// <summary>Iterates page by page; each page is requested when you ask for it.</summary>
     /// <param name="cancellationToken">Stops the iteration.</param>
     /// <returns>The pages in order.</returns>
-    public IAsyncEnumerable<Page<T>> PagesAsync(CancellationToken cancellationToken = default) => IteratePagesAsync(new Progress(), cancellationToken);
+    public IAsyncEnumerable<Page<T>> PagesAsync(CancellationToken cancellationToken = default) => IteratePagesAsync(cancellationToken);
 
-    /// <summary>Reads every item into a list, fetching pages as fast as possible.</summary>
+    /// <summary>Reads every item into a list, requesting each next page as soon as a page arrives.</summary>
     /// <param name="cancellationToken">Stops the iteration.</param>
     /// <returns>All items.</returns>
     public async Task<List<T>> ListAllAsync(CancellationToken cancellationToken = default)
     {
         var all = new List<T>();
-        await foreach (var item in ItemsAsync(cancellationToken).ConfigureAwait(false)) all.Add(item);
-        return all;
+        var progress = new Progress();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_token, cancellationToken);
+        Task<Page<T>>? next = _fetch(null, cts.Token);
+        try
+        {
+            while (next is not null)
+            {
+                var page = await AwaitPageAsync(next, progress).ConfigureAwait(false);
+                // Read-ahead: request the next page before handling this one.
+                next = page.HasMore && page.NextCursor is { } cursor ? _fetch(cursor, cts.Token) : null;
+                progress.Record(page);
+                all.AddRange(page.Data);
+            }
+            return all;
+        }
+        finally
+        {
+            Release(next, cts);
+        }
     }
 
     /// <inheritdoc/>
@@ -152,74 +176,96 @@ public sealed class Pager<T> : IAsyncEnumerable<T>
 
     private async IAsyncEnumerable<T> ItemsAsync([EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var progress = new Progress { CountItems = true };
-        await foreach (var page in IteratePagesAsync(progress, cancellationToken).ConfigureAwait(false))
+        var progress = new Progress();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_token, cancellationToken);
+        Task<Page<T>>? next = null;
+        try
         {
-            for (var i = 0; i < page.Data.Count; i++)
+            var page = await AwaitPageAsync(_fetch(null, cts.Token), progress).ConfigureAwait(false);
+            while (true)
             {
-                progress.ItemsYielded++;
-                progress.LastId = page.ItemIds[i];
-                progress.LastUpdatedAt = page.ItemUpdatedAts[i];
-                yield return page.Data[i];
+                progress.Pages++;
+                var held = Stopwatch.StartNew();
+                var cursor = page.HasMore ? page.NextCursor : null;
+                for (var i = 0; i < page.Data.Count; i++)
+                {
+                    // Read-ahead for slow consumers: the caller asked for another item and has held this
+                    // page long enough that waiting for its end could let the cursor's idle window lapse.
+                    if (cursor is not null && next is null && held.Elapsed >= ReadAheadAfter) next = _fetch(cursor, cts.Token);
+                    progress.ItemsYielded++;
+                    progress.LastId = page.ItemIds[i];
+                    progress.LastUpdatedAt = page.ItemUpdatedAts[i];
+                    yield return page.Data[i];
+                }
+                if (cursor is null) yield break;
+                var pending = next ?? _fetch(cursor, cts.Token);
+                next = null;
+                page = await AwaitPageAsync(pending, progress).ConfigureAwait(false);
             }
+        }
+        finally
+        {
+            Release(next, cts);
+        }
+    }
+
+    private async IAsyncEnumerable<Page<T>> IteratePagesAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var progress = new Progress();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(_token, cancellationToken);
+        var page = await AwaitPageAsync(_fetch(null, cts.Token), progress).ConfigureAwait(false);
+        while (true)
+        {
+            progress.Record(page);
+            yield return page;
+            if (!page.HasMore || page.NextCursor is not { } cursor) yield break;
+            page = await AwaitPageAsync(_fetch(cursor, cts.Token), progress).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Awaits a page; adds the iteration's progress to a <see cref="CursorExpiredException"/>.</summary>
+    private static async Task<Page<T>> AwaitPageAsync(Task<Page<T>> page, Progress progress)
+    {
+        try
+        {
+            return await page.ConfigureAwait(false);
+        }
+        catch (CursorExpiredException ex)
+        {
+            throw new CursorExpiredException(ex, progress.ItemsYielded, progress.Pages, progress.LastId, progress.LastUpdatedAt);
+        }
+    }
+
+    /// <summary>Cancels and observes a read-ahead request the caller no longer needs, then disposes the token source.</summary>
+    private static void Release(Task<Page<T>>? next, CancellationTokenSource cts)
+    {
+        if (next is not null && !next.IsCompleted)
+        {
+            cts.Cancel();
+            _ = next.ContinueWith(t => { _ = t.Exception; cts.Dispose(); }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
+        else
+        {
+            if (next is { IsFaulted: true }) _ = next.Exception;
+            cts.Dispose();
         }
     }
 
     private sealed class Progress
     {
-        public bool CountItems;
         public int ItemsYielded;
         public int Pages;
         public string? LastId;
         public string? LastUpdatedAt;
-    }
 
-    private async IAsyncEnumerable<Page<T>> IteratePagesAsync(Progress progress, [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(_token, cancellationToken);
-        Task<Page<T>>? next = _fetch(null, cts.Token);
-        try
+        public void Record(Page<T> page)
         {
-            while (next is not null)
+            Pages++;
+            ItemsYielded += page.Data.Count;
+            if (page.Data.Count > 0)
             {
-                Page<T> page;
-                try
-                {
-                    page = await next.ConfigureAwait(false);
-                }
-                catch (CursorExpiredException ex)
-                {
-                    next = null;
-                    throw new CursorExpiredException(ex, progress.ItemsYielded, progress.Pages, progress.LastId, progress.LastUpdatedAt);
-                }
-                progress.Pages++;
-                // Read-ahead: request the next page before handing this one to the caller.
-                next = page.HasMore && page.NextCursor is { } cursor ? _fetch(cursor, cts.Token) : null;
-                if (!progress.CountItems)
-                {
-                    progress.ItemsYielded += page.Data.Count;
-                    if (page.Data.Count > 0)
-                    {
-                        progress.LastId = page.ItemIds[page.Data.Count - 1];
-                        progress.LastUpdatedAt = page.ItemUpdatedAts[page.Data.Count - 1];
-                    }
-                }
-                yield return page;
-            }
-        }
-        finally
-        {
-            if (next is not null && !next.IsCompleted)
-            {
-                // The caller stopped early: cancel the read-ahead request and observe its outcome.
-                cts.Cancel();
-                var source = cts;
-                _ = next.ContinueWith(t => { _ = t.Exception; source.Dispose(); }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            }
-            else
-            {
-                if (next is { IsFaulted: true }) _ = next.Exception;
-                cts.Dispose();
+                LastId = page.ItemIds[page.Data.Count - 1];
+                LastUpdatedAt = page.ItemUpdatedAts[page.Data.Count - 1];
             }
         }
     }
