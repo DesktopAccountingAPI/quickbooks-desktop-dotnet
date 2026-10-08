@@ -33,6 +33,8 @@ public class ErrorMappingTests
         Assert.Equal("req_header", ex.RequestId);
         Assert.Equal(1, ex.Details["k"].GetInt32());
         Assert.Equal(400, ex.Status);
+        // Unhandled-exception output and loggers use ToString(): it carries the code and request ID.
+        Assert.StartsWith($"{expected.FullName}: 400 {code} m (req_header)", ex.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

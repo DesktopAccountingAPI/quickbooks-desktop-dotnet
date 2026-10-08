@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.2.1**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.3.0**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.2.1
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.3.0
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.2.1" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.3.0" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -47,7 +47,7 @@ A secret key can read and write every connected company file in its project. Kee
 
 ## Quickstart
 
-Each of your customers is an **end user** (`eu_...`) with one QuickBooks Desktop company file, connected through the Web Connector. Copy an end user ID from the dashboard's **End users** page, then in a console app (`dotnet new console`):
+Each of your customers is an **end user** (`eu_...`) with one QuickBooks Desktop company file, connected through the Web Connector. Copy an end user ID from the dashboard's **End users** page and set it as `DAAPI_END_USER_ID` (`export DAAPI_END_USER_ID="eu_..."`), then in a console app (`dotnet new console`):
 
 ```csharp run=quickstart harness=none
 using System;
@@ -55,14 +55,18 @@ using DesktopAccountingApi.QuickBooksDesktop;
 using DesktopAccountingApi.QuickBooksDesktop.Models;
 
 // Reads DAAPI_SECRET_KEY. EndUserId is sent as Daapi-End-User-Id on every QuickBooks call.
-using var client = new DesktopAccountingApiClient(new ClientOptions { EndUserId = "eu_01j9x4m6v4c8k2t7q0r5s3w1zb" });
+var endUserId = Environment.GetEnvironmentVariable("DAAPI_END_USER_ID") ?? throw new InvalidOperationException("Set DAAPI_END_USER_ID.");
+using var client = new DesktopAccountingApiClient(new ClientOptions { EndUserId = endUserId });
 
 var health = await client.Qbd.HealthCheckAsync();
 Console.WriteLine($"QuickBooks connection: {health.Status}");
 
+// The loop fetches further pages as needed (10 invoices per request); stop after the first 10.
+var shown = 0;
 await foreach (var invoice in client.Qbd.Invoices.ListAsync(new InvoiceListParams { Limit = 10 }))
 {
     Console.WriteLine($"{invoice.RefNumber} {invoice.Subtotal}"); // Subtotal is a decimal, for example 105.50
+    if (++shown == 10) break;
 }
 ```
 
@@ -149,7 +153,7 @@ A stale revision is a `409` `INTEGRATION_ERROR` with code `QBD_REVISION_NUMBER_S
     "type": "INTEGRATION_ERROR",
     "code": "QBD_REVISION_NUMBER_STALE",
     "message": "The object changed since you read it; revisionNumber is out of date.",
-    "userFacingMessage": "This record was changed by someone else. Reload it and try again.",
+    "userFacingMessage": "This record changed in QuickBooks Desktop after it was loaded. Reload it and try again.",
     "httpStatusCode": 409,
     "integrationCode": "3200",
     "requestId": "req_01j9x4m6v4c8k2t7q0r5s3w1zd",
@@ -295,7 +299,7 @@ List<Customer> all = await client.Qbd.Customers.ListAsync().ListAllAsync();
 
 Continue requests send only `cursor` (and `limit` if you set one). The next page is requested only when the iteration reaches it, so `break`ing out of a loop never sends an extra QuickBooks query. While `await foreach` hands you items, a page held for more than 2 seconds makes the SDK request the next page in the background, which keeps slow loops inside the cursor's idle window. `PagesAsync()` requests each page when you ask for it; `ListAllAsync()` always requests the next page as soon as a page arrives. A network error on a continue request retries the same cursor, which returns the same page.
 
-QuickBooks cursors live inside one QuickBooks session and expire when it ends or after an idle period. Then iteration throws `CursorExpiredException` with `ItemsYielded`, `PagesServed`, `LastId`, `LastUpdatedAt` (as the API sent it) and `Reason`. The SDK never restarts a list on its own, because records may have changed in the meantime. Restart with a watermark and skip what you already have:
+QuickBooks cursors live inside one QuickBooks session and expire when it ends or after an idle period. Then iteration throws `CursorExpiredException` with `ItemsYielded`, `PagesServed`, `LastId`, `LastUpdatedAt` (as the API sent it) and `Reason`. The SDK never restarts a list on its own, because records may have changed in the meantime. Restart the same query and skip what you already have. Do not resume from the last record's `updatedAt`: QuickBooks returns records in its own order, not by `updatedAt`, so records you have not read yet can be older than the last one you read. An incremental sync restarts from the `updatedAfter` watermark it saved before the traversal ([pagination guide](https://www.desktopaccountingapi.com/docs/guides/pagination/#recovering-from-cursor_expired)).
 
 ```csharp
 var seen = new HashSet<string>();
@@ -305,10 +309,9 @@ try
 }
 catch (CursorExpiredException ex)
 {
-    Console.WriteLine($"{ex.ItemsYielded} items, {ex.PagesServed} pages, last {ex.LastId}: {ex.Reason}");
-    var resume = new CustomerListParams { Limit = 100 };
-    if (ex.LastUpdatedAt is not null) resume.UpdatedAfter = ex.LastUpdatedAt;
-    await foreach (var customer in client.Qbd.Customers.ListAsync(resume)) seen.Add(customer.Id);
+    Console.WriteLine($"{ex.ItemsYielded} items, {ex.PagesServed} pages, last {ex.LastId}: {ex.Reason} ({ex.RequestId})");
+    // Restart the same query; the set skips the IDs you already have.
+    await foreach (var customer in client.Qbd.Customers.ListAsync(new CustomerListParams { Limit = 100 })) seen.Add(customer.Id);
 }
 ```
 
@@ -370,7 +373,7 @@ There are three timeouts:
 - **Total timeout** (`ClientOptions.TotalTimeout` / `RequestOptions.TotalTimeout`, no default): the whole call, including every attempt, the waits between retries and the wait for a pending request. An attempt still running when it ends is cancelled (`ApiTimeoutException`), and no retry starts that could not finish in time.
 - **Server timeout** (`ServerTimeout`, sent as `Daapi-Timeout-Seconds`): how long the API waits for QuickBooks before answering `504 QBD_REQUEST_TIMEOUT`.
 
-After `504 QBD_REQUEST_TIMEOUT` the request is still queued or running at the end user's QuickBooks. The SDK does not resend it. It long-polls `GET /v1/requests/{id}?waitSeconds=N` until the call's deadline (`TotalTimeout`, else the client timeout) has passed since the call started. When the request succeeds you get the normal typed result; when it fails you get the typed exception; when time runs out you get `RequestPendingException` with `RequestId`:
+After `504 QBD_REQUEST_TIMEOUT` the request is still queued or running at the end user's QuickBooks. The SDK does not resend it. It long-polls `GET /v1/requests/{id}?waitSeconds=N` until the call's deadline (`TotalTimeout`, else the client timeout) has passed since the call started. When the request succeeds you get the normal typed result; when it fails you get the typed exception; when time runs out, or a poll fails (`429`, `5xx`, `404`, network; that failure says nothing about the write), you get `RequestPendingException` with `RequestId`, `TimeoutError` (the original 504) and `IdempotencyKey` (resend only with that key):
 
 ```csharp
 try
@@ -486,7 +489,7 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `b5774d24bc81...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `79b06eb20083...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 

@@ -186,16 +186,30 @@ internal sealed class ApiCore
     internal async Task<ApiResponse<T>> SendAsync<T>(OperationInfo op, string path, InputObject? query, object? body, RequestOptions? options, CancellationToken cancellationToken)
     {
         var call = Begin(op, options, async: false);
-        var (json, raw) = await SendForResultAsync(call, path, query?.ToQuery(), Serialize(body), "application/json", "application/json", cancellationToken).ConfigureAwait(false);
-        return new ApiResponse<T>(Parse<T>(json), raw.Status, raw.Headers);
+        try
+        {
+            var (json, raw) = await SendForResultAsync(call, path, query?.ToQuery(), Serialize(body), "application/json", "application/json", cancellationToken).ConfigureAwait(false);
+            return new ApiResponse<T>(Parse<T>(json), raw.Status, raw.Headers, call.IdempotencyKey);
+        }
+        catch (DaapiException ex) when (AttachKey(ex, call.IdempotencyKey))
+        {
+            throw;
+        }
     }
 
     internal async Task<string> SendXmlAsync(OperationInfo op, string path, string xml, RequestOptions? options, CancellationToken cancellationToken)
     {
         if (xml is null) throw new ArgumentNullException(nameof(xml));
         var call = Begin(op, options, async: false);
-        var (text, _) = await SendForResultAsync(call, path, null, Encoding.UTF8.GetBytes(xml), "application/xml", "application/xml", cancellationToken).ConfigureAwait(false);
-        return text;
+        try
+        {
+            var (text, _) = await SendForResultAsync(call, path, null, Encoding.UTF8.GetBytes(xml), "application/xml", "application/xml", cancellationToken).ConfigureAwait(false);
+            return text;
+        }
+        catch (DaapiException ex) when (AttachKey(ex, call.IdempotencyKey))
+        {
+            throw;
+        }
     }
 
     internal Pager<T> Paginate<T>(OperationInfo op, string path, InputObject? query, RequestOptions? options, CancellationToken cancellationToken)
@@ -229,19 +243,34 @@ internal sealed class ApiCore
     private async Task<RequestHandle<T>> EnqueueCoreAsync<T>(OperationInfo op, string path, InputObject? query, object? body, Func<string, T> parse, RequestOptions? options, CancellationToken cancellationToken)
     {
         var call = Begin(op, options, async: true);
-        var raw = await ExecuteAsync(call, op.Method, BuildUrl(path, query?.ToQuery()), Serialize(body), body is null ? null : "application/json", "application/json", call.Timeout, cancellationToken).ConfigureAwait(false);
-        if (!raw.Success) throw ErrorFactory.FromResponse(raw.Status, raw.Headers, raw.Body);
-        if (raw.Status != 202) throw new DaapiException($"{op.Id}: expected 202 Accepted for an async-mode request, got {raw.Status}.");
-        var request = Parse<Request>(raw.Body);
-        return new RequestHandle<T>(this, request, parse, options);
+        try
+        {
+            var raw = await ExecuteAsync(call, op.Method, BuildUrl(path, query?.ToQuery()), Serialize(body), body is null ? null : "application/json", "application/json", call.Timeout, cancellationToken).ConfigureAwait(false);
+            if (!raw.Success) throw ErrorFactory.FromResponse(raw.Status, raw.Headers, raw.Body);
+            if (raw.Status != 202) throw new DaapiException($"{op.Id}: expected 202 Accepted for an async-mode request, got {raw.Status}.");
+            var request = Parse<Request>(raw.Body);
+            return new RequestHandle<T>(this, request, parse, options, call.IdempotencyKey);
+        }
+        catch (DaapiException ex) when (AttachKey(ex, call.IdempotencyKey))
+        {
+            throw;
+        }
+    }
+
+    /// <summary>Exception filter: records the write's idempotency key on the exception and never catches it.</summary>
+    internal static bool AttachKey(DaapiException ex, string? key)
+    {
+        if (key is not null && ex.IdempotencyKey is null) ex.IdempotencyKey = key;
+        return false;
     }
 
     // ------------------------------------------------------- request polling
 
     internal async Task<(Request Request, IReadOnlyDictionary<string, string> Headers, int Status)> GetRequestAsync(string requestId, int? waitSeconds, RequestOptions? options, CancellationToken cancellationToken)
     {
-        // A long poll is sized by its caller's deadline (waitSeconds); the total timeout does not cut it short.
-        var call = Begin(RequestsRetrieve, options, async: false, totalTimeout: waitSeconds is null);
+        // A long poll carries its caller's remaining budget as TotalTimeout (codex review #15): every
+        // attempt, retry and backoff stays inside it. Without one it is not cut short.
+        var call = Begin(RequestsRetrieve, options, async: false, totalTimeout: waitSeconds is null || options?.TotalTimeout is not null);
         var query = new List<KeyValuePair<string, string>>();
         if (waitSeconds is { } w) query.Add(new KeyValuePair<string, string>("waitSeconds", w.ToString(CultureInfo.InvariantCulture)));
         var attemptTimeout = waitSeconds is { } s ? TimeSpan.FromSeconds(s + 10) : call.Timeout;
@@ -250,23 +279,49 @@ internal sealed class ApiCore
         return (Parse<Request>(raw.Body), raw.Headers, raw.Status);
     }
 
-    internal async Task<T> WaitForResultAsync<T>(string requestId, Request? last, Func<string, T> parse, TimeSpan? timeout, RequestOptions? options, CancellationToken cancellationToken)
+    internal async Task<T> WaitForResultAsync<T>(string requestId, Request? last, Func<string, T> parse, TimeSpan? timeout, RequestOptions? options, string? idempotencyKey, CancellationToken cancellationToken)
     {
         var budget = timeout ?? options?.TotalTimeout ?? TotalTimeout ?? options?.Timeout ?? Timeout;
-        var (result, _, _) = await PollAsync(requestId, last, parse, Stopwatch.StartNew(), budget, options, cancellationToken).ConfigureAwait(false);
-        return result;
+        try
+        {
+            var (result, _, _) = await PollAsync(requestId, last, parse, Stopwatch.StartNew(), budget, options, null, idempotencyKey, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+        catch (DaapiException ex) when (AttachKey(ex, idempotencyKey))
+        {
+            // The request's own typed exceptions (failed, canceled, outcome_unknown) carry the key too.
+            throw;
+        }
     }
 
-    private async Task<(T Result, IReadOnlyDictionary<string, string> Headers, int Status)> PollAsync<T>(string requestId, Request? last, Func<string, T> parse, Stopwatch clock, TimeSpan budget, RequestOptions? options, CancellationToken cancellationToken)
+    /// <summary>
+    /// Long-polls until the request settles or the budget ends. A settled request returns its result
+    /// or throws its own typed exception. Anything else that ends the wait (the budget, or a poll that
+    /// failed: 429, 5xx, 404, network, timeout) throws <see cref="RequestPendingException"/>; the
+    /// failed poll's own retryable exception would invite a duplicate write (Fable review F-1).
+    /// </summary>
+    private async Task<(T Result, IReadOnlyDictionary<string, string> Headers, int Status)> PollAsync<T>(string requestId, Request? last, Func<string, T> parse, Stopwatch clock, TimeSpan budget, RequestOptions? options, ApiException? timeoutError, string? idempotencyKey, CancellationToken cancellationToken)
     {
         while (true)
         {
             var remaining = budget - clock.Elapsed;
-            if (remaining <= TimeSpan.Zero) throw new RequestPendingException(requestId, last);
+            if (remaining <= TimeSpan.Zero) throw new RequestPendingException(requestId, last, timeoutError, null, idempotencyKey);
             var wait = (int)Math.Min(60, Math.Ceiling(remaining.TotalSeconds));
             Log(DaapiLogLevel.Info, $"Waiting up to {wait} s for request {requestId}.");
-            var pollOptions = new RequestOptions { MaxRetries = options?.MaxRetries, Timeout = options?.Timeout };
-            var (request, headers, status) = await GetRequestAsync(requestId, wait, pollOptions, cancellationToken).ConfigureAwait(false);
+            var pollOptions = new RequestOptions { MaxRetries = options?.MaxRetries, Timeout = options?.Timeout, TotalTimeout = remaining };
+            Request request;
+            IReadOnlyDictionary<string, string> headers;
+            int status;
+            try
+            {
+                (request, headers, status) = await GetRequestAsync(requestId, wait, pollOptions, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DaapiException ex)
+            {
+                throw new RequestPendingException(requestId, last, timeoutError, ex, idempotencyKey);
+            }
+            // An answer that arrives after the budget is not returned, settled or not (codex re-review #15).
+            if (clock.Elapsed > budget) throw new RequestPendingException(requestId, request, timeoutError, null, idempotencyKey);
             if (TryResolve(request, parse, out var result)) return (result, headers, status);
             last = request;
         }
@@ -279,6 +334,9 @@ internal sealed class ApiCore
         switch (request.Status)
         {
             case RequestStatus.Succeeded:
+                // QuickBooks answered, but the API could not map the answer (for example
+                // QBD_RESPONSE_UNREADABLE, outcome applied): throw that catalog error (codex review #4).
+                if (request.Error is not null) throw ErrorFactory.Create(request.Error.HttpStatusCode, request.Error, null, $"Request {request.Id} succeeded, but its result could not be read.");
                 if (request.Result is not { } value || value.ValueKind == JsonValueKind.Null)
                 {
                     throw new DaapiException(request.ResultExpired
@@ -311,7 +369,7 @@ internal sealed class ApiCore
             var requestId = rid.GetString()!;
             Log(DaapiLogLevel.Info, $"{call.Op.Id} timed out on the server; collecting request {requestId} without resending.");
             var options = new RequestOptions { MaxRetries = call.MaxRetries, Timeout = call.Timeout };
-            var (json, headers, status) = await PollAsync(requestId, null, s => s, call.Clock, call.PendingBudget, options, cancellationToken).ConfigureAwait(false);
+            var (json, headers, status) = await PollAsync(requestId, null, s => s, call.Clock, call.PendingBudget, options, error, call.IdempotencyKey, cancellationToken).ConfigureAwait(false);
             return (json, new RawResponse(status, headers, json));
         }
         Log(DaapiLogLevel.Warning, $"{call.Op.Id} failed: HTTP {raw.Status} {error.Code} (request {error.RequestId}).");

@@ -320,7 +320,16 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             actual["lastId"] = cursor.LastId;
             actual["lastUpdatedAt"] = cursor.LastUpdatedAt;
         }
-        if (error is RequestPendingException pending) actual["requestId"] = pending.RequestId;
+        if (error is RequestPendingException pending)
+        {
+            actual["requestId"] = pending.RequestId;
+            actual["timeoutErrorCode"] = pending.TimeoutError?.Code;
+        }
+        if (error is DaapiException daapi)
+        {
+            var key = daapi.IdempotencyKey;
+            actual["idempotencyKey"] = expected.TryGetProperty("idempotencyKey", out var k) && k.GetString() == "$uuid" && key is not null && Guid.TryParseExact(key, "D", out _) ? "$uuid" : key;
+        }
         var actualElement = JsonSerializer.SerializeToElement(actual);
 
         foreach (var p in expected.EnumerateObject())

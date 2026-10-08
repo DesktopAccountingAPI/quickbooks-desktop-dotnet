@@ -13,12 +13,16 @@ namespace DesktopAccountingApi.QuickBooksDesktop;
 /// <typeparam name="T">The result type.</typeparam>
 public sealed class ApiResponse<T>
 {
-    internal ApiResponse(T data, int statusCode, IReadOnlyDictionary<string, string> headers)
+    internal ApiResponse(T data, int statusCode, IReadOnlyDictionary<string, string> headers, string? idempotencyKey = null)
     {
         Data = data;
         StatusCode = statusCode;
         Headers = headers;
+        IdempotencyKey = idempotencyKey;
     }
+
+    /// <summary>The <c>Idempotency-Key</c> the SDK sent for a write (generated unless you set one), else <c>null</c>.</summary>
+    public string? IdempotencyKey { get; }
 
     /// <summary>The parsed result.</summary>
     public T Data { get; }
@@ -283,13 +287,17 @@ public sealed class RequestHandle<T>
     private readonly Func<string, T> _parse;
     private readonly RequestOptions? _options;
 
-    internal RequestHandle(ApiCore core, Request request, Func<string, T> parse, RequestOptions? options)
+    internal RequestHandle(ApiCore core, Request request, Func<string, T> parse, RequestOptions? options, string? idempotencyKey = null)
     {
         _core = core;
         Request = request;
         _parse = parse;
         _options = options;
+        IdempotencyKey = idempotencyKey;
     }
+
+    /// <summary>The <c>Idempotency-Key</c> sent with the write that created this request, else <c>null</c>.</summary>
+    public string? IdempotencyKey { get; }
 
     /// <summary>The request ID (<c>req_...</c>).</summary>
     public string Id => Request.Id;
@@ -307,21 +315,28 @@ public sealed class RequestHandle<T>
     /// Long-polls <c>GET /v1/requests/{id}?waitSeconds=N</c> until the request finishes or
     /// <paramref name="timeout"/> elapses. Returns the typed result when it succeeded; throws the
     /// typed <see cref="ApiException"/> when it failed, was canceled or became <c>outcome_unknown</c>;
-    /// throws <see cref="RequestPendingException"/> when the time is up.
+    /// throws <see cref="RequestPendingException"/> when the time is up or a poll fails.
     /// </summary>
     /// <param name="timeout">How long to wait. Default: the client timeout.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <returns>The operation's result.</returns>
     public Task<T> WaitAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default) =>
-        _core.WaitForResultAsync(Id, Request, _parse, timeout, _options, cancellationToken);
+        _core.WaitForResultAsync(Id, Request, _parse, timeout, _options, IdempotencyKey, cancellationToken);
 
     /// <summary>Checks once: returns the result if the request succeeded, throws its typed error if it failed, or throws <see cref="RequestPendingException"/> if it has not finished.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The operation's result.</returns>
     public async Task<T> ResultAsync(CancellationToken cancellationToken = default)
     {
-        var current = await _core.GetRequestAsync(Id, null, _options, cancellationToken).ConfigureAwait(false);
-        if (ApiCore.TryResolve(current.Request, _parse, out var result)) return result;
-        throw new RequestPendingException(Id, current.Request);
+        try
+        {
+            var current = await _core.GetRequestAsync(Id, null, _options, cancellationToken).ConfigureAwait(false);
+            if (ApiCore.TryResolve(current.Request, _parse, out var result)) return result;
+            throw new RequestPendingException(Id, current.Request, null, null, IdempotencyKey);
+        }
+        catch (DaapiException ex) when (ApiCore.AttachKey(ex, IdempotencyKey))
+        {
+            throw;
+        }
     }
 }
