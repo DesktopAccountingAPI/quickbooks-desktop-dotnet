@@ -24,6 +24,14 @@ public class DaapiException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <summary>
+    /// The <c>Idempotency-Key</c> the SDK sent for the write that raised this exception (generated
+    /// once per call unless you set <see cref="RequestOptions.IdempotencyKey"/>), else <c>null</c>.
+    /// Resend a write whose outcome is <c>pending</c> or <c>unknown</c>, or that failed without a
+    /// response, only with this key: the API then returns the original request.
+    /// </summary>
+    public string? IdempotencyKey { get; internal set; }
 }
 
 /// <summary>
@@ -61,6 +69,7 @@ public class ApiException : DaapiException
         Error = other.Error;
         Headers = other.Headers;
         RequestId = other.RequestId;
+        IdempotencyKey = other.IdempotencyKey;
     }
 
     private static string BuildMessage(int? status, Error? error, string? fallback)
@@ -68,6 +77,24 @@ public class ApiException : DaapiException
         if (!string.IsNullOrEmpty(error?.Message)) return error!.Message;
         if (!string.IsNullOrEmpty(error?.Code)) return error!.Code;
         return fallback ?? (status is { } s ? $"HTTP {s}" : "The API returned an error.");
+    }
+
+    /// <summary>
+    /// The exception with its status, error code and request ID, for unhandled-exception output and
+    /// loggers: <c>Type: 404 QBD_OBJECT_NOT_FOUND The QuickBooks object does not exist. (req_...)</c>,
+    /// then the inner exception and stack trace. <see cref="Exception.Message"/> stays the API message.
+    /// </summary>
+    /// <returns>The description.</returns>
+    public override string ToString()
+    {
+        var text = new System.Text.StringBuilder(GetType().FullName).Append(": ");
+        if (Status is { } status) text.Append(status.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(' ');
+        if (!string.IsNullOrEmpty(Code)) text.Append(Code).Append(' ');
+        text.Append(Message);
+        if (!string.IsNullOrEmpty(RequestId)) text.Append(" (").Append(RequestId).Append(')');
+        if (InnerException is not null) text.Append(" ---> ").Append(InnerException);
+        if (StackTrace is not null) text.AppendLine().Append(StackTrace);
+        return text.ToString();
     }
 
     /// <summary>The parsed API error object, or <c>null</c> when the response body was not a JSON error.</summary>
@@ -281,7 +308,10 @@ public sealed class ApiTimeoutException : ApiConnectionException
 /// <summary>
 /// The request is still queued or running when the SDK stopped waiting (after a
 /// <c>504 QBD_REQUEST_TIMEOUT</c> or in <see cref="RequestHandle{T}.WaitAsync"/>). It was not
-/// resubmitted. Collect the result later with <c>client.Requests.RetrieveAsync(RequestId)</c> or a webhook.
+/// resubmitted. The SDK throws this, never the exception of a failed poll, whenever it cannot learn
+/// the request's final state: a poll that failed with 429, 5xx, 404 or a network error says nothing
+/// about the write. Collect the result later with <c>client.Requests.RetrieveAsync(RequestId)</c>
+/// or a webhook, or resend only with <see cref="DaapiException.IdempotencyKey"/>.
 /// </summary>
 public sealed class RequestPendingException : DaapiException
 {
@@ -289,11 +319,34 @@ public sealed class RequestPendingException : DaapiException
     /// <param name="requestId">The pending request's ID.</param>
     /// <param name="request">The last request snapshot, if one was fetched.</param>
     public RequestPendingException(string requestId, Request? request)
-        : base($"Request {requestId} has not finished (status {request?.Status ?? "pending"}). It was not resubmitted; retrieve it later with client.Requests.RetrieveAsync(\"{requestId}\").")
+        : this(requestId, request, null, null, null)
+    {
+    }
+
+    /// <summary>Creates the exception with the error that started the wait and the poll failure that ended it.</summary>
+    /// <param name="requestId">The pending request's ID.</param>
+    /// <param name="request">The last request snapshot, if one was fetched.</param>
+    /// <param name="timeoutError">The <c>504 QBD_REQUEST_TIMEOUT</c> that started the wait (also the inner exception), if any.</param>
+    /// <param name="pollError">The failed poll that ended the wait, if any.</param>
+    /// <param name="idempotencyKey">The write's <c>Idempotency-Key</c>, if any.</param>
+    public RequestPendingException(string requestId, Request? request, ApiException? timeoutError, DaapiException? pollError, string? idempotencyKey)
+        : base(
+            $"Request {requestId} has not finished (status {request?.Status ?? "pending"}): {(pollError is null ? "the time budget ended" : "checking it failed (" + pollError.Message + ")")}. It was not resubmitted; retrieve it later with client.Requests.RetrieveAsync(\"{requestId}\")"
+                + (idempotencyKey is null ? "." : $" or resend it only with Idempotency-Key {idempotencyKey}."),
+            (Exception?)timeoutError ?? pollError)
     {
         RequestId = requestId;
         Request = request;
+        TimeoutError = timeoutError;
+        PollError = pollError;
+        IdempotencyKey = idempotencyKey;
     }
+
+    /// <summary>The <c>504 QBD_REQUEST_TIMEOUT</c> exception (with <c>details.diagnosis</c>) that started the wait, if any.</summary>
+    public ApiException? TimeoutError { get; }
+
+    /// <summary>The failed poll that ended the wait, if any. It says nothing about the write: never resend with a new key because of it.</summary>
+    public DaapiException? PollError { get; }
 
     /// <summary>The pending request's ID (<c>req_...</c>).</summary>
     public string RequestId { get; }

@@ -31,6 +31,9 @@ public static class WebhookEventTypes
     /// <summary>A connection's derived status changed.</summary>
     public const string ConnectionStatusChanged = "connection.status_changed";
 
+    /// <summary>The marker that identifies the connection's company file was created, restored or adopted.</summary>
+    public const string ConnectionCompanyFileRemarked = "connection.company_file_remarked";
+
     /// <summary>A test event sent from the dashboard or <c>POST /v1/webhook-endpoints/{id}/test</c>.</summary>
     public const string WebhookTest = "webhook.test";
 }
