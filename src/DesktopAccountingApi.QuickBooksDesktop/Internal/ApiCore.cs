@@ -169,16 +169,20 @@ internal sealed class ApiCore
 
     private sealed class RawResponse
     {
-        public RawResponse(int status, IReadOnlyDictionary<string, string> headers, string body)
+        public RawResponse(int status, IReadOnlyDictionary<string, string> headers, string body, string? requestId = null)
         {
             Status = status;
             Headers = headers;
             Body = body;
+            RequestId = requestId ?? Header("Daapi-Request-Id");
         }
 
         public int Status { get; }
         public IReadOnlyDictionary<string, string> Headers { get; }
         public string Body { get; }
+
+        /// <summary>The request that produced the body: <c>Daapi-Request-Id</c>, or the long-polled request's ID.</summary>
+        public string? RequestId { get; }
         public bool Success => Status >= 200 && Status < 300;
         public string? Header(string name) => Headers.TryGetValue(name, out var v) ? v : null;
     }
@@ -189,7 +193,7 @@ internal sealed class ApiCore
         try
         {
             var (json, raw) = await SendForResultAsync(call, path, query?.ToQuery(), Serialize(body), "application/json", "application/json", cancellationToken).ConfigureAwait(false);
-            return new ApiResponse<T>(Parse<T>(json), raw.Status, raw.Headers, call.IdempotencyKey);
+            return new ApiResponse<T>(Parse<T>(json), raw.Status, raw.Headers, call.IdempotencyKey, raw.RequestId);
         }
         catch (DaapiException ex) when (AttachKey(ex, call.IdempotencyKey))
         {
@@ -230,7 +234,7 @@ internal sealed class ApiCore
                 if (limit is not null) pairs.Add(new KeyValuePair<string, string>("limit", limit));
             }
             var (json, raw) = await SendForResultAsync(call, path, pairs, null, null, "application/json", ct).ConfigureAwait(false);
-            return Page<T>.Parse(json, raw.Header("Daapi-Request-Id"));
+            return Page<T>.Parse(json, raw.RequestId);
         }, cancellationToken);
     }
 
@@ -369,7 +373,8 @@ internal sealed class ApiCore
             Log(DaapiLogLevel.Info, $"{call.Op.Id} timed out on the server; collecting request {requestId} without resending.");
             var options = new RequestOptions { MaxRetries = call.MaxRetries, Timeout = call.Timeout };
             var (json, headers, status) = await PollAsync(requestId, null, s => s, call.Clock, call.PendingBudget, options, error, call.IdempotencyKey, cancellationToken).ConfigureAwait(false);
-            return (json, new RawResponse(status, headers, json));
+            // The result belongs to the request that timed out, not to the poll that collected it.
+            return (json, new RawResponse(status, headers, json, requestId));
         }
         Log(DaapiLogLevel.Warning, $"{call.Op.Id} failed: HTTP {raw.Status} {error.Code} (request {error.RequestId}).");
         throw error;

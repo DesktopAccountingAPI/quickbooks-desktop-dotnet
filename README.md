@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.0**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.1**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.0
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.1
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.0" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.1" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -266,7 +266,7 @@ Every method takes an optional `RequestOptions` (`EndUserId`, `IdempotencyKey`, 
 
 ## Inputs: omitted, set and null
 
-Request bodies and query parameters are classes such as `InvoiceUpdateInput` and `InvoiceListParams`. Only the properties you set are sent. Properties documented as "Set to null to clear" send an explicit `null`, which clears the value in QuickBooks; setting any other property to `null` removes it from the request. `IsSet(name)` and `Unset(name)` inspect and undo assignments. Required properties that are missing throw `DaapiException` before the request is sent.
+Request bodies and query parameters are classes such as `InvoiceUpdateInput` and `InvoiceListParams`. Only the properties you set are sent. Properties documented as "Set to null to clear" send an explicit `null`, which clears the value in QuickBooks; setting any other property to `null` removes it from the request. `IsSet(name)` and `Unset(name)` inspect and undo assignments. Required properties are checked before the request is sent, not by the compiler: a missing one throws `DaapiException` and nothing is sent.
 
 ```csharp
 var invoice = await client.Qbd.Invoices.RetrieveAsync("7-1700000000");
@@ -420,7 +420,7 @@ var response = await client.Qbd.Customers.RetrieveWithResponseAsync("80000001-17
 Console.WriteLine($"{response.StatusCode} {response.RequestId}: {response.Data.Name}");
 ```
 
-Pages expose the request ID of their response as `Page<T>.RequestId`.
+`RequestId` is the ID of the request that produced the result. After the SDK long-polled a request that timed out on the server (`504 QBD_REQUEST_TIMEOUT`), it is that request's ID, which `client.Requests.RetrieveAsync(response.RequestId)` finds; the final poll's own ID stays in the `Headers["Daapi-Request-Id"]` header. Pages expose the request ID of their response as `Page<T>.RequestId`.
 
 ## Passthrough
 
@@ -491,7 +491,7 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `1fc5496cc47b...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `3d102b7bcecb...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 
