@@ -14,12 +14,13 @@ namespace DesktopAccountingApi.QuickBooksDesktop;
 /// <typeparam name="T">The result type.</typeparam>
 public sealed class ApiResponse<T>
 {
-    internal ApiResponse(T data, int statusCode, IReadOnlyDictionary<string, string> headers, string? idempotencyKey = null)
+    internal ApiResponse(T data, int statusCode, IReadOnlyDictionary<string, string> headers, string? idempotencyKey = null, string? requestId = null)
     {
         Data = data;
         StatusCode = statusCode;
         Headers = headers;
         IdempotencyKey = idempotencyKey;
+        RequestId = requestId ?? (headers.TryGetValue("Daapi-Request-Id", out var v) ? v : null);
     }
 
     /// <summary>The <c>Idempotency-Key</c> the SDK sent for a write (generated unless you set one), else <c>null</c>.</summary>
@@ -34,8 +35,12 @@ public sealed class ApiResponse<T>
     /// <summary>Response headers; names are case-insensitive. Multiple values are joined with <c>", "</c>.</summary>
     public IReadOnlyDictionary<string, string> Headers { get; }
 
-    /// <summary>The <c>Daapi-Request-Id</c> header.</summary>
-    public string? RequestId => Headers.TryGetValue("Daapi-Request-Id", out var v) ? v : null;
+    /// <summary>
+    /// The ID of the request that produced the result: the <c>Daapi-Request-Id</c> header, or, after the SDK
+    /// long-polled a request that timed out on the server (<c>504 QBD_REQUEST_TIMEOUT</c>), that request's ID,
+    /// which <c>client.Requests.RetrieveAsync</c> finds. The final poll's own ID stays in <see cref="Headers"/>.
+    /// </summary>
+    public string? RequestId { get; }
 
     /// <summary>The number of QuickBooks warnings recorded on the request (the <c>Daapi-Warnings</c> header); 0 when the header is absent or not a number.</summary>
     public int Warnings =>
