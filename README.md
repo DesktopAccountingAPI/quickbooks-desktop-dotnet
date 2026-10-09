@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.3**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.4**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.3
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.4
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.3" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.4" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -492,7 +492,7 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `09aa9517f466...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `d4adaec794b6...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 

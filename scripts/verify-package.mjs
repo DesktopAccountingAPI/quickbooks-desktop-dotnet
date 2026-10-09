@@ -40,12 +40,20 @@ if (files.includes(nupkg)) {
   }
   expect(zip.has("README.md"), `${nupkg} lacks README.md`);
   expect(zip.has("LICENSE"), `${nupkg} lacks LICENSE`);
+  // nuget.org shows the package icon; it must be a PNG of at least 128x128.
+  const icon = zip.get("icon.png")?.();
+  expect(Boolean(icon), `${nupkg} lacks icon.png`);
+  if (icon) {
+    const png = icon.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    expect(png && icon.readUInt32BE(16) >= 128 && icon.readUInt32BE(20) >= 128, "icon.png is a PNG of at least 128x128");
+  }
   const nuspecName = [...zip.keys()].find((n) => n.endsWith(".nuspec"));
   const nuspec = nuspecName ? zip.get(nuspecName)().toString("utf8") : "";
   expect(nuspec.includes(`<id>${PACKAGE_ID}</id>`), "nuspec id");
   expect(nuspec.includes(`<version>${version}</version>`), "nuspec version");
   expect(nuspec.includes('<license type="expression">MIT</license>'), "nuspec MIT license expression");
   expect(nuspec.includes("<readme>README.md</readme>"), "nuspec readme");
+  expect(nuspec.includes("<icon>icon.png</icon>"), "nuspec icon");
   expect(/<repository type="git" url="https:\/\/github\.com\/DesktopAccountingAPI\/quickbooks-desktop-dotnet"/.test(nuspec), "nuspec repository url");
   const ns20 = /<group targetFramework="\.NETStandard2\.0">([\s\S]*?)<\/group>/.exec(nuspec)?.[1] ?? "";
   for (const dep of ["System.Text.Json", "Microsoft.Bcl.AsyncInterfaces", "Portable.System.DateTimeOnly"]) {
@@ -65,4 +73,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error(`package check failed: ${e}`);
   process.exit(1);
 }
-console.log(`package ${PACKAGE_ID} ${version} OK (${TFMS.join(", ")}, XML docs, README, MIT license, symbols)`);
+console.log(`package ${PACKAGE_ID} ${version} OK (${TFMS.join(", ")}, XML docs, README, icon, MIT license, symbols)`);

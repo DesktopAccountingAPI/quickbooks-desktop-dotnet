@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.4 (2026-10-09)
+
+- New error code `ROUTE_NOT_FOUND` (`ErrorCodes.RouteNotFound`): a `404` for a method and path the API has no endpoint for, such as the API root. These answered `RESOURCE_MISSING`, whose cause describes a missing ID.
+- The NuGet package carries the Desktop Accounting API icon, which nuget.org shows next to the package.
+
 ## 0.5.3 (2026-10-09)
 
 - Released in lockstep with the other Desktop Accounting API packages; no entries for this package.
