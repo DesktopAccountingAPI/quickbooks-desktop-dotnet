@@ -11,7 +11,7 @@
 
     <!-- Package. The ID matches the NuGet trusted-publishing policy glob DesktopAccountingAPI.* -->
     <PackageId>DesktopAccountingAPI.QuickBooksDesktop</PackageId>
-    <Version>0.5.3</Version>
+    <Version>0.5.4</Version>
     <Authors>Desktop Accounting API</Authors>
     <Company>Desktop Accounting API</Company>
     <Product>Desktop Accounting API .NET SDK</Product>
@@ -20,6 +20,8 @@
     <PackageTags>quickbooks;quickbooks-desktop;qbxml;accounting;api;sdk;desktopaccountingapi</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- The brand B1 mark, rendered from register-b1.svg at 512x512 (nuget.org shows it at 128x128). -->
+    <PackageIcon>icon.png</PackageIcon>
     <PackageProjectUrl>https://www.desktopaccountingapi.com/docs/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -36,6 +38,7 @@
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" />
     <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+    <None Include="../../icon.png" Pack="true" PackagePath="/" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">

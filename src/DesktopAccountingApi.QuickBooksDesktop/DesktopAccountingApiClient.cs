@@ -11,13 +11,13 @@ namespace DesktopAccountingApi.QuickBooksDesktop;
 public sealed partial class DesktopAccountingApiClient : IDisposable
 {
     /// <summary>This SDK's version.</summary>
-    public const string SdkVersion = "0.5.3";
+    public const string SdkVersion = "0.5.4";
 
     /// <summary>The API contract version this SDK was generated from.</summary>
     public const string ApiVersion = "1.0.0";
 
     /// <summary>SHA-256 of the OpenAPI contract this SDK was generated from.</summary>
-    public const string ContractSha256 = "09aa9517f466027d023798abdf939204d057d808cb4eb15566deed6b960adcec";
+    public const string ContractSha256 = "d4adaec794b6cf028d0f87bcaed3668ec305d5e364a02008e8a22258ee3a7d59";
 
     /// <summary>Production API base URL.</summary>
     public const string DefaultBaseUrl = "https://api.desktopaccountingapi.com";
