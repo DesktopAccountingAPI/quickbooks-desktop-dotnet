@@ -60,6 +60,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
     private sealed class Observed
     {
         public object? Result;
+        public string? Text;
         public Exception? Error;
         public List<string?> Items = new();
         public object? Page;
@@ -195,6 +196,9 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             case ("qbd.healthCheck", "call"):
                 observed.Result = await client.Qbd.HealthCheckAsync(options);
                 break;
+            case ("endUsers.passthrough", "xml"):
+                observed.Text = await client.EndUsers.PassthroughXmlAsync(PathParam(call, "id"), call.GetProperty("xml").GetString()!, options);
+                break;
             case ("endUsers.passthrough", "call"):
                 observed.Result = await client.EndUsers.PassthroughAsync(PathParam(call, "id"), Params<PassthroughInput>(call), options);
                 break;
@@ -250,6 +254,10 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
                 var value = Navigate(actual, p.Name);
                 Assert.True(value is { } v && JsonEquals(v, p.Value), $"{name}: result.{p.Name} = {(value is { } x ? x.GetRawText() : "<missing>")}, expected {p.Value.GetRawText()}");
             }
+        }
+        if (outcome.TryGetProperty("text", out var text))
+        {
+            Assert.Equal(text.GetString(), observed.Text);
         }
         if (outcome.TryGetProperty("items", out var items))
         {

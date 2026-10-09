@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A read that hits the server timeout (`504 QBD_REQUEST_TIMEOUT` with outcome `not_applicable`) is long-polled like a write: the SDK waits on `GET /v1/requests/{id}` until the call's deadline and returns the result or throws `RequestPendingException`, instead of throwing the 504 at once. The rule is the same in every SDK: HTTP 504, code `QBD_REQUEST_TIMEOUT` and a `details.requestId`, whatever the outcome. Such a 504 is never retried.
+- **Breaking:** `ApiResponse<T>.Warnings` is the number of QuickBooks warnings (`int`, 0 when the `Daapi-Warnings` header is absent), not the header text. Read `Headers["Daapi-Warnings"]` for the raw value.
+- **Breaking (types):** Response prices, rates and percentages (for example `QbdInvoiceLine.rate`, `QbdSalesOrPurchaseDetail.price`, `ratePercent`) carry the same decimal pattern as their inputs and as amounts, so they are `decimal` instead of `string`.
+- The README documents resuming a list from a stored `NextCursor` (`new InvoiceListParams {{ Cursor = savedCursor }}`), now covered by the cross-language conformance suite.
 - **Breaking:** `Qbd.Reports.BudgetSummaryAsync` now takes `ReportBudgetSummaryParams` as a required argument, and `FiscalYear` is required in it. The API always rejected a budget report without it (`400 INVALID_PARAMETER`, `param: "fiscalYear"`), so no working call changes behavior; code that omitted it no longer compiles. Set `FiscalYear`, for example `new ReportBudgetSummaryParams { ReportType = ..., FiscalYear = 2026 }`.
 - `WebhookEventTypes.ConnectionCompanyFileRemarked` (`connection.company_file_remarked`): the marker that identifies a connection's company file was created, written back after the file lost it (for example a restored backup) or adopted from the file; `data.reason` is `marker_created`, `marker_restored` or `marker_adopted`.
 - After `504 QBD_REQUEST_TIMEOUT`, any failure while waiting for the request (a poll answered `429`, `5xx` or `404`, a network error or a timeout) throws `RequestPendingException` with `RequestId`, `TimeoutError` (the 504, also the inner exception), `PollError` and `IdempotencyKey`. It never surfaces the poll's own retryable exception, which read as "safe to resend" and could duplicate a write. `RequestHandle.WaitAsync` follows the same rule.
@@ -20,7 +24,7 @@
 
 ## 0.1.0
 
-First release, generated from API contract 1.0.0 (sha256 `68a0d76d6b51`).
+First release, generated from API contract 1.0.0 (sha256 `1fc5496cc47b`).
 
 - `DesktopAccountingApiClient` with typed async methods for all 275 operations, `ForEndUser`, per-call `RequestOptions` and `...WithResponseAsync` raw-response variants.
 - Typed models and inputs: `decimal` money with preserved scale, `DateOnly` dates, `DateTimeOffset` timestamps, open enums as strings with constants, inputs that send only what you set (explicit `null` clears).

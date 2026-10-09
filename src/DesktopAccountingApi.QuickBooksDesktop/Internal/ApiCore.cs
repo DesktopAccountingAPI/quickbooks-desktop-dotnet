@@ -362,11 +362,10 @@ internal sealed class ApiCore
         if (raw.Success) return (raw.Body, raw);
         var error = ErrorFactory.FromResponse(raw.Status, raw.Headers, raw.Body);
         // 504 QBD_REQUEST_TIMEOUT: the request reached QuickBooks' queue and may still run. Never
-        // resubmit; long-poll the request resource until this call's deadline.
-        if (error.Code == ErrorCodes.QbdRequestTimeout && error.Outcome == ErrorOutcome.Pending &&
-            error.Details.TryGetValue("requestId", out var rid) && rid.ValueKind == JsonValueKind.String)
+        // resubmit; long-poll the request resource until this call's deadline. This holds for reads
+        // (outcome not_applicable) as well as writes (outcome pending).
+        if (PendingRequestId(raw.Status, error) is { } requestId)
         {
-            var requestId = rid.GetString()!;
             Log(DaapiLogLevel.Info, $"{call.Op.Id} timed out on the server; collecting request {requestId} without resending.");
             var options = new RequestOptions { MaxRetries = call.MaxRetries, Timeout = call.Timeout };
             var (json, headers, status) = await PollAsync(requestId, null, s => s, call.Clock, call.PendingBudget, options, error, call.IdempotencyKey, cancellationToken).ConfigureAwait(false);
@@ -458,13 +457,25 @@ internal sealed class ApiCore
 
     private static string Seconds(TimeSpan value) => ((long)Math.Ceiling(value.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Retry 429 and 5xx with <c>Daapi-Should-Retry: true</c>; never when the header says false or the outcome is unknown or pending.</summary>
+    /// <summary>
+    /// The request to long-poll after <c>504 QBD_REQUEST_TIMEOUT</c>, else null. Same rule in every SDK:
+    /// HTTP 504, code <c>QBD_REQUEST_TIMEOUT</c> and a non-empty <c>details.requestId</c>, whatever the outcome.
+    /// </summary>
+    private static string? PendingRequestId(int status, ApiException error) =>
+        status == 504 && error.Code == ErrorCodes.QbdRequestTimeout &&
+        error.Details.TryGetValue("requestId", out var rid) && rid.ValueKind == JsonValueKind.String &&
+        rid.GetString() is { Length: > 0 } id
+            ? id
+            : null;
+
+    /// <summary>Retry 429 and 5xx with <c>Daapi-Should-Retry: true</c>; never when the header says false, the outcome is unknown or pending, or the request is still running after the server timeout.</summary>
     private static bool ShouldRetry(RawResponse raw)
     {
         var header = raw.Header("Daapi-Should-Retry");
         if (string.Equals(header, "false", StringComparison.OrdinalIgnoreCase)) return false;
         var error = ErrorFactory.FromResponse(raw.Status, raw.Headers, raw.Body);
         if (error.Outcome is ErrorOutcome.Unknown or ErrorOutcome.Pending) return false;
+        if (PendingRequestId(raw.Status, error) is not null) return false;
         if (raw.Status == 429) return true;
         return raw.Status >= 500 && string.Equals(header, "true", StringComparison.OrdinalIgnoreCase);
     }
