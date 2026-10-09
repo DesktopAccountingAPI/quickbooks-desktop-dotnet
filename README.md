@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.1**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.2**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.1
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.2
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.1" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.2" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -432,7 +432,8 @@ var json = await client.EndUsers.PassthroughAsync("eu_01j9x4m6v4c8k2t7q0r5s3w1zb
     ["CustomerQueryRq"] = new Dictionary<string, object?> { ["MaxReturned"] = 5 },
 });
 
-string xml = await client.EndUsers.PassthroughXmlAsync("eu_01j9x4m6v4c8k2t7q0r5s3w1zb", "<CustomerQueryRq><MaxReturned>5</MaxReturned></CustomerQueryRq>");
+string xml = await client.EndUsers.PassthroughXmlAsync("eu_01j9x4m6v4c8k2t7q0r5s3w1zb",
+    "<QBXMLMsgsRq onError=\"stopOnError\"><CustomerQueryRq><MaxReturned>5</MaxReturned></CustomerQueryRq></QBXMLMsgsRq>");
 ```
 
 Passthrough calls always send an idempotency key, because a body with anything other than a query element is a write.
@@ -487,11 +488,11 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 
 ## Versioning and changelog
 
-- The package follows [semantic versioning](https://semver.org/). Only a major version removes or renames anything in the SDK's public API.
+- The package follows [semantic versioning](https://semver.org/). Before 1.0, a minor version may contain breaking changes; they are marked Breaking in the [CHANGELOG](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md).
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `3d102b7bcecb...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `09aa9517f466...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 
