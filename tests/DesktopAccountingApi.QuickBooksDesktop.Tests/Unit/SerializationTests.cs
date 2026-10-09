@@ -24,6 +24,17 @@ public class SerializationTests
     }
 
     [Fact]
+    public void Response_prices_and_rates_are_decimals()
+    {
+        // SDK-E2E D4: response rates and prices carry the decimal pattern, so they are decimal like the inputs.
+        var line = DesktopAccountingApiJson.Deserialize<InvoiceLine>("{\"id\":\"1\",\"rate\":\"12.50000\",\"ratePercent\":\"7.5\"}")!;
+        decimal? rate = line.Rate;
+        Assert.Equal(12.50000m, rate);
+        Assert.Equal(7.5m, line.RatePercent);
+        Assert.Contains("\"rate\":\"12.50000\"", line.ToJson(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Decimal_inputs_are_sent_as_strings()
     {
         var line = new InvoiceLineCreateInput { ItemId = "80000005-1700000000", Quantity = 2, Rate = 52.75m, Amount = 5.00m };

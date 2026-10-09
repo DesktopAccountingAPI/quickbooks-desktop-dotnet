@@ -299,8 +299,17 @@ public class ClientTests
         var response = await client.Qbd.Customers.RetrieveWithResponseAsync("1");
         Assert.Equal(200, response.StatusCode);
         Assert.Equal("req_raw", response.RequestId);
-        Assert.Equal("1", response.Warnings);
+        Assert.Equal(1, response.Warnings);
         Assert.Equal("1", response.Data.Id);
+    }
+
+    [Fact]
+    public async Task With_response_warnings_is_zero_without_the_header()
+    {
+        var stub = new StubHandler().Respond(200, "{\"id\":\"1\"}", ("Daapi-Request-Id", "req_raw"));
+        using var client = stub.Client();
+        var response = await client.Qbd.Customers.RetrieveWithResponseAsync("1");
+        Assert.Equal(0, response.Warnings);
     }
 
     [Fact]

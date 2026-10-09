@@ -11,7 +11,7 @@
 
     <!-- Package. The ID matches the NuGet trusted-publishing policy glob DesktopAccountingAPI.* -->
     <PackageId>DesktopAccountingAPI.QuickBooksDesktop</PackageId>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <Authors>Desktop Accounting API</Authors>
     <Company>Desktop Accounting API</Company>
     <Product>Desktop Accounting API .NET SDK</Product>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
@@ -36,8 +37,9 @@ public sealed class ApiResponse<T>
     /// <summary>The <c>Daapi-Request-Id</c> header.</summary>
     public string? RequestId => Headers.TryGetValue("Daapi-Request-Id", out var v) ? v : null;
 
-    /// <summary>The <c>Daapi-Warnings</c> header (number of QuickBooks warnings recorded on the request), if present.</summary>
-    public string? Warnings => Headers.TryGetValue("Daapi-Warnings", out var v) ? v : null;
+    /// <summary>The number of QuickBooks warnings recorded on the request (the <c>Daapi-Warnings</c> header); 0 when the header is absent or not a number.</summary>
+    public int Warnings =>
+        Headers.TryGetValue("Daapi-Warnings", out var v) && int.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0;
 }
 
 /// <summary>One page of a cursor-paginated list.</summary>

@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.4.0**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.0**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.4.0
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.0
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.4.0" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.0" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -297,6 +297,8 @@ await foreach (var p in client.Qbd.Customers.ListAsync().PagesAsync()) Console.W
 List<Customer> all = await client.Qbd.Customers.ListAsync().ListAllAsync();
 ```
 
+To resume from a page you stored earlier, for example across HTTP requests, pass its `NextCursor` as `Cursor`: `client.Qbd.Invoices.ListAsync(new InvoiceListParams { Cursor = savedCursor, Limit = 100 }).GetFirstPageAsync()` returns that page, and iterating continues from it. Filters live in the cursor, so pass only the cursor and, if you like, the limit. A QuickBooks cursor expires when it sits idle, so resume soon after you store it.
+
 Continue requests send only `cursor` (and `limit` if you set one). The next page is requested only when the iteration reaches it, so `break`ing out of a loop never sends an extra QuickBooks query. While `await foreach` hands you items, a page held for more than 2 seconds makes the SDK request the next page in the background, which keeps slow loops inside the cursor's idle window. `PagesAsync()` requests each page when you ask for it; `ListAllAsync()` always requests the next page as soon as a page arrives. A network error on a continue request retries the same cursor, which returns the same page.
 
 QuickBooks cursors live inside one QuickBooks session and expire when it ends or after an idle period. Then iteration throws `CursorExpiredException` with `ItemsYielded`, `PagesServed`, `LastId`, `LastUpdatedAt` (as the API sent it) and `Reason`. The SDK never restarts a list on its own, because records may have changed in the meantime. Restart the same query and skip what you already have. Do not resume from the last record's `updatedAt`: QuickBooks returns records in its own order, not by `updatedAt`, so records you have not read yet can be older than the last one you read. An incremental sync restarts from the `updatedAfter` watermark it saved before the traversal ([pagination guide](https://www.desktopaccountingapi.com/docs/guides/pagination/#recovering-from-cursor_expired)).
@@ -407,7 +409,7 @@ The request is sent with `Prefer: respond-async` (and `Daapi-Queue-Ttl-Seconds` 
 
 ## Webhooks
 
-Webhooks follow [Standard Webhooks](https://www.standardwebhooks.com/). `WebhookVerifier.Verify(body, headers, secret)` checks the signature and timestamp and returns the parsed event; no API key is needed. `client.Webhooks.Verify(...)` does the same. Header names are matched case-insensitively, the secret may include the `whsec_` prefix or not, several `v1,` signatures are accepted during secret rotation, signatures are compared in constant time, and timestamps more than 5 minutes from the clock are rejected (`WebhookVerifyOptions.Tolerance`, `WebhookVerifyOptions.Clock`). `WebhookVerifier.VerifySignature` checks only the signature; `WebhookVerifier.Sign` creates one for tests. Delivery is at least once: deduplicate on `ev.Id`.
+Webhooks follow [Standard Webhooks](https://www.standardwebhooks.com/). `WebhookVerifier.Verify(body, headers, secret)` checks the signature and timestamp and returns the parsed event; no API key is needed. `client.Webhooks.Verify(...)` does the same. Header names are matched case-insensitively, the secret may include the `whsec_` prefix or not, several `v1,` signatures are accepted during secret rotation, signatures are compared in constant time, and timestamps more than 5 minutes from the clock are rejected (`WebhookVerifyOptions.Tolerance`; `WebhookVerifyOptions.Clock`, a `Func<DateTimeOffset>`, injects a clock for tests). `WebhookVerifier.VerifySignature` checks only the signature; `WebhookVerifier.Sign` creates one for tests. Delivery is at least once: deduplicate on `ev.Id`.
 
 ## Raw responses
 
@@ -489,7 +491,7 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `68a0d76d6b51...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `1fc5496cc47b...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 
