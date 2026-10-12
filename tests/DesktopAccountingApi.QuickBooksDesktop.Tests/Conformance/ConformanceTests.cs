@@ -63,6 +63,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         public string? Text;
         public Exception? Error;
         public List<string?> Items = new();
+        public List<string> ItemTypes = new();
         public object? Page;
         public (string Id, string Status)? Handle;
         public (int Status, string? RequestId, IReadOnlyDictionary<string, string> Headers)? Response;
@@ -183,6 +184,15 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             case ("qbd.invoices.void", "call"):
                 observed.Result = await client.Qbd.Invoices.VoidAsync(PathParam(call, "id"), options);
                 break;
+            case ("qbd.items.list", "iterate" or "firstPage"):
+                await RunPager(client.Qbd.Items.ListAsync(Params<ItemListParams>(call), options), kind, take, observed);
+                break;
+            case ("qbd.items.retrieve", "call"):
+                observed.Result = await client.Qbd.Items.RetrieveAsync(PathParam(call, "id"), options);
+                break;
+            case ("qbd.entities.retrieve", "call"):
+                observed.Result = await client.Qbd.Entities.RetrieveAsync(PathParam(call, "id"), options);
+                break;
             case ("qbd.customers.retrieve", "call"):
                 observed.Result = await client.Qbd.Customers.RetrieveAsync(PathParam(call, "id"), options);
                 break;
@@ -227,6 +237,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         await foreach (var item in pager)
         {
             observed.Items.Add(IdOf(item));
+            observed.ItemTypes.Add(item?.GetType().Name ?? "null");
             if (take is { } n && observed.Items.Count >= n) break;
         }
     }
@@ -254,6 +265,14 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
                 var value = Navigate(actual, p.Name);
                 Assert.True(value is { } v && JsonEquals(v, p.Value), $"{name}: result.{p.Name} = {(value is { } x ? x.GetRawText() : "<missing>")}, expected {p.Value.GetRawText()}");
             }
+        }
+        if (outcome.TryGetProperty("variant", out var variant))
+        {
+            Assert.Equal(variant.GetString(), observed.Result?.GetType().Name);
+        }
+        if (outcome.TryGetProperty("itemVariants", out var itemVariants))
+        {
+            Assert.Equal(itemVariants.EnumerateArray().Select(i => i.GetString()!).ToList(), observed.ItemTypes);
         }
         if (outcome.TryGetProperty("text", out var text))
         {

@@ -165,8 +165,10 @@ public class InvalidRequestException : ApiException
 /// <summary>
 /// <c>410 CURSOR_EXPIRED</c>: a pagination cursor expired while iterating (idle window passed,
 /// QuickBooks session ended or restarted, iterator evicted). The SDK never restarts a list
-/// silently: restart the list with <c>UpdatedAfter</c> set to a watermark (for example the
-/// <see cref="LastUpdatedAt"/> of the last item you processed) and skip IDs you already have.
+/// silently: restart the same query and skip IDs you already have. Do not resume from
+/// <see cref="LastUpdatedAt"/>: QuickBooks returns records in its own order, not by <c>updatedAt</c>,
+/// so records not yet read can be older. An incremental sync keeps the <c>UpdatedAfter</c> watermark
+/// of its previous completed sync until the whole traversal finishes (pagination guide).
 /// </summary>
 public sealed class CursorExpiredException : InvalidRequestException
 {
