@@ -2,7 +2,7 @@
 
 The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountingapi.com/), a REST API for QuickBooks Desktop and QuickBooks Enterprise. Your server makes typed calls such as `client.Qbd.Invoices.CreateAsync(...)`, and Desktop Accounting API delivers them to your customer's company file through the QuickBooks Web Connector.
 
-- Covers all 275 operations of API 1.0.0: QuickBooks objects and reports (`client.Qbd`), end users, auth sessions, request tracking, qbXML passthrough and webhook verification.
+- Covers all 433 operations of API 1.0.0: QuickBooks objects and reports (`client.Qbd`), end users, auth sessions, request tracking, qbXML passthrough and webhook verification.
 - Models for every object, nullable annotations, `async` methods with `CancellationToken`, `IAsyncEnumerable` pagination and typed exceptions for every error type.
 - Amounts are `decimal`, sent with their scale preserved.
 - Every write carries an idempotency key, retries happen only where they cannot duplicate data, and an expired QuickBooks cursor never restarts a list silently.
@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.5.4**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.6.0**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.5.4
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.6.0
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.5.4" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.6.0" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -299,7 +299,7 @@ List<Customer> all = await client.Qbd.Customers.ListAsync().ListAllAsync();
 
 To resume from a page you stored earlier, for example across HTTP requests, pass its `NextCursor` as `Cursor`: `client.Qbd.Invoices.ListAsync(new InvoiceListParams { Cursor = savedCursor, Limit = 100 }).GetFirstPageAsync()` returns that page, and iterating continues from it. Filters live in the cursor, so pass only the cursor and, if you like, the limit. A QuickBooks cursor expires when it sits idle, so resume soon after you store it.
 
-Continue requests send only `cursor` (and `limit` if you set one). The next page is requested only when the iteration reaches it, so `break`ing out of a loop never sends an extra QuickBooks query. While `await foreach` hands you items, a page held for more than 2 seconds makes the SDK request the next page in the background, which keeps slow loops inside the cursor's idle window. `PagesAsync()` requests each page when you ask for it; `ListAllAsync()` always requests the next page as soon as a page arrives. A network error on a continue request retries the same cursor, which returns the same page.
+Continue requests send only `cursor` (and `limit` if you set one). The next page is requested only when the iteration reaches it, so `break`ing out of a loop never sends an extra QuickBooks query. Breaking out early is also safe for the end user's QuickBooks: the API releases the cursor you leave behind by stopping its QuickBooks iterator once the cursor idles out (about 10 seconds after its last page) or when a fourth cursor list starts for the same end user, so abandoned lists never use up QuickBooks' open-iterator limit. Cursor lifetime: about 10 seconds idle after each page (`cursorExpiresAt`), at most 3 open cursor lists per end user, and never longer than the QuickBooks session that started it; continuing an expired cursor raises `CursorExpiredException`, never partial data. While `await foreach` hands you items, a page held for more than 2 seconds makes the SDK request the next page in the background, which keeps slow loops inside the cursor's idle window. `PagesAsync()` requests each page when you ask for it; `ListAllAsync()` always requests the next page as soon as a page arrives. A network error on a continue request retries the same cursor, which returns the same page.
 
 QuickBooks cursors live inside one QuickBooks session and expire when it ends or after an idle period. Then iteration throws `CursorExpiredException` with `ItemsYielded`, `PagesServed`, `LastId`, `LastUpdatedAt` (as the API sent it) and `Reason`. The SDK never restarts a list on its own, because records may have changed in the meantime. Restart the same query and skip what you already have. Do not resume from the last record's `updatedAt`: QuickBooks returns records in its own order, not by `updatedAt`, so records you have not read yet can be older than the last one you read. An incremental sync restarts from the `updatedAfter` watermark it saved before the traversal ([pagination guide](https://www.desktopaccountingapi.com/docs/guides/pagination/#recovering-from-cursor_expired)).
 
@@ -492,7 +492,7 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `d4adaec794b6...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `45acc3e65d06...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 
