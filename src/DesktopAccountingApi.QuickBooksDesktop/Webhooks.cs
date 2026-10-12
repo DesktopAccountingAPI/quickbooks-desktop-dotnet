@@ -34,6 +34,9 @@ public static class WebhookEventTypes
     /// <summary>The marker that identifies the connection's company file was created, restored or adopted.</summary>
     public const string ConnectionCompanyFileRemarked = "connection.company_file_remarked";
 
+    /// <summary>Opt-in change feed: records of a watched resource changed or were deleted (IDs only).</summary>
+    public const string DataChanged = "data.changed";
+
     /// <summary>A test event sent from the dashboard or <c>POST /v1/webhook-endpoints/{id}/test</c>.</summary>
     public const string WebhookTest = "webhook.test";
 }

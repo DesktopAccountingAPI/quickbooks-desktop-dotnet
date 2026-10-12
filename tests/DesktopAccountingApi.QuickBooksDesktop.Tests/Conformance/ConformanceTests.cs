@@ -215,6 +215,10 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             case ("requests.retrieve", "call"):
                 observed.Result = await client.Requests.RetrieveAsync(PathParam(call, "id"), null, options);
                 break;
+            case ("qbd.batch", "call"):
+                // The members deserialize through the IBatchRequestInput converter (by operationId).
+                observed.Result = await client.Qbd.BatchAsync(Params<BatchInput>(call)!, options);
+                break;
             default:
                 throw new InvalidOperationException($"The .NET conformance runner does not map {op} / {kind}.");
         }
@@ -269,6 +273,11 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         if (outcome.TryGetProperty("variant", out var variant))
         {
             Assert.Equal(variant.GetString(), observed.Result?.GetType().Name);
+        }
+        if (outcome.TryGetProperty("resultVariants", out var resultVariants))
+        {
+            Assert.True(observed.Result is Batch, $"{name}: expected a Batch result");
+            Assert.Equal(resultVariants.EnumerateArray().Select(i => i.GetString()!).ToList(), ((Batch)observed.Result!).Results.Select(r => r.GetType().Name).ToList());
         }
         if (outcome.TryGetProperty("itemVariants", out var itemVariants))
         {
@@ -380,6 +389,12 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         var current = element;
         foreach (var part in dotted.Split('.'))
         {
+            if (current.ValueKind == JsonValueKind.Array && int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var index))
+            {
+                if (index >= current.GetArrayLength()) return null;
+                current = current[index];
+                continue;
+            }
             if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(part, out var next)) return null;
             current = next;
         }
