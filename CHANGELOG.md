@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.7.0 (2026-10-12)
+
+- New `client.Qbd.BatchAsync()`: up to 25 typed QuickBooks Desktop operations in one Web Connector round trip. Each member is the member class of its operation (`new BatchCustomerCreateInput { Body = ... }`, which sets `OperationId` itself) and each result is an instance of its operation's result class (`BatchCustomerCreateResult`, whose `Data` is a `Customer`), or `UnknownBatchResult` for an operation added later; pattern-match on the class. One idempotency key covers the batch; a lost response throws `OutcomeUnknownException` with `Details["members"]` and is never retried.
+- A batch whose response was lost and whose create members the API later found in QuickBooks by their `ExternalId` returns each such member with `Data` null and the record's QuickBooks ID in `RecoveredObjectId` (on every batch result: `string?`), on `client.Requests.RetrieveAsync()` and on an idempotent replay.
+- New error code `QBD_REQUEST_NOT_PROCESSED` (`ErrorCodes.QbdRequestNotProcessed`): `409`, not retryable. QuickBooks skipped a batch member because an earlier member failed under `stopOnError` (status 3231).
+- **Breaking (types only):** the credit card request info of receive payments is the class `QbdRequest`. It was deserialized as the request resource class `Request` by mistake, so its properties read as null.
+- Change feed subscriptions: `client.ChangeFeedSubscriptions.CreateAsync()`, `ListAsync()`, `RetrieveAsync()`, `UpdateAsync()` and `DeleteAsync()` (`/v1/change-feed-subscriptions`). A subscription polls every connected end user of the project for changed and deleted records of the listed resources and sends `data.changed` webhooks with their IDs. New webhook event type `WebhookEventTypes.DataChanged` (`data.changed`). New error code `CHANGE_FEED_SUBSCRIPTION_LIMIT_REACHED` (`422`, not retryable).
+
 ## 0.6.0 (2026-10-12)
 
 - **Breaking:** the list parameters type of `qbd.classes.list` is renamed from `ClasseListParams` to `ClassListParams` (the generator dropped only the final "s" of "classes"). Rename the type in your code; nothing else changes. No other type name was affected.

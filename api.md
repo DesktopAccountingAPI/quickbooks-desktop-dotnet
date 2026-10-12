@@ -1,6 +1,6 @@
 # API reference
 
-Every method of `DesktopAccountingApiClient`, generated from the API contract (433 operations, contract sha256 `45acc3e65d06`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
+Every method of `DesktopAccountingApiClient`, generated from the API contract (439 operations, contract sha256 `f4cd9b5c733e`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
 
 Every method also takes `RequestOptions? options = null` and `CancellationToken cancellationToken = default` (omitted below). Variants:
 
@@ -14,6 +14,21 @@ Auth sessions.
 
 - `Task<AuthSession> CreateAsync(AuthSessionCreateInput input)`  
   `POST /v1/auth-sessions` (`authSessions.create`): Create an auth session
+
+## client.ChangeFeedSubscriptions
+
+Change feed.
+
+- `Task<ChangeFeedSubscription> CreateAsync(ChangeFeedSubscriptionCreateInput input)`  
+  `POST /v1/change-feed-subscriptions` (`changeFeedSubscriptions.create`): Create a change feed subscription
+- `Task<ChangeFeedSubscriptionDeleted> DeleteAsync(string id)`  
+  `DELETE /v1/change-feed-subscriptions/{id}` (`changeFeedSubscriptions.delete`): Delete a change feed subscription
+- `Pager<ChangeFeedSubscription> ListAsync(ChangeFeedSubscriptionListParams? parameters = null)`  
+  `GET /v1/change-feed-subscriptions` (`changeFeedSubscriptions.list`) *paginated*: List change feed subscriptions
+- `Task<ChangeFeedSubscription> RetrieveAsync(string id)`  
+  `GET /v1/change-feed-subscriptions/{id}` (`changeFeedSubscriptions.retrieve`): Retrieve a change feed subscription
+- `Task<ChangeFeedSubscription> UpdateAsync(string id, ChangeFeedSubscriptionUpdateInput input)`  
+  `POST /v1/change-feed-subscriptions/{id}` (`changeFeedSubscriptions.update`): Update a change feed subscription
 
 ## client.EndUsers
 
@@ -44,8 +59,10 @@ End users.
 
 ## client.Qbd
 
-Health check.
+Batch.
 
+- `Task<Batch> BatchAsync(BatchInput input)`  
+  `POST /v1/quickbooks-desktop/batch` (`qbd.batch`) *async mode*: Run several operations in one round trip
 - `Task<HealthCheck> HealthCheckAsync()`  
   `GET /v1/quickbooks-desktop/health-check` (`qbd.healthCheck`) *async mode*: Check the QuickBooks Desktop connection
 
