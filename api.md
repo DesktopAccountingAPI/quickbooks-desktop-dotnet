@@ -1,6 +1,6 @@
 # API reference
 
-Every method of `DesktopAccountingApiClient`, generated from the API contract (439 operations, contract sha256 `f4cd9b5c733e`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
+Every method of `DesktopAccountingApiClient`, generated from the API contract (438 operations, contract sha256 `149fc7b0599d`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
 
 Every method also takes `RequestOptions? options = null` and `CancellationToken cancellationToken = default` (omitted below). Variants:
 
@@ -367,12 +367,12 @@ Custom field definitions.
 
 - `Task<CustomFieldDefinition> CreateAsync(CustomFieldDefinitionCreateInput input)`  
   `POST /v1/quickbooks-desktop/custom-field-definitions` (`qbd.customFieldDefinitions.create`) *async mode*: Create a custom field definition
-- `Task<DeletedCustomFieldDefinition> DeleteAsync(string name, CustomFieldDefinitionDeleteParams parameters)`  
-  `DELETE /v1/quickbooks-desktop/custom-field-definitions/{name}` (`qbd.customFieldDefinitions.delete`) *async mode*: Request deletion of a private custom field definition
+- `Task<CustomFieldDefinitionDeleted> DeleteAsync(string definitionName, CustomFieldDefinitionDeleteParams parameters)`  
+  `DELETE /v1/quickbooks-desktop/custom-field-definitions/{definitionName}` (`qbd.customFieldDefinitions.delete`) *async mode*: Request deletion of a private custom field definition
 - `Task<CustomFieldDefinitionList> ListAsync(CustomFieldDefinitionListParams? parameters = null)`  
   `GET /v1/quickbooks-desktop/custom-field-definitions` (`qbd.customFieldDefinitions.list`) *async mode*: List custom field definitions
-- `Task<CustomFieldDefinition> UpdateAsync(string name, CustomFieldDefinitionUpdateInput input)`  
-  `POST /v1/quickbooks-desktop/custom-field-definitions/{name}` (`qbd.customFieldDefinitions.update`) *async mode*: Update a custom field definition
+- `Task<CustomFieldDefinition> UpdateAsync(string definitionName, CustomFieldDefinitionUpdateInput input)`  
+  `POST /v1/quickbooks-desktop/custom-field-definitions/{definitionName}` (`qbd.customFieldDefinitions.update`) *async mode*: Update a custom field definition
 
 ## client.Qbd.DateDrivenTerms
 
@@ -1156,7 +1156,7 @@ Transactions.
   `GET /v1/quickbooks-desktop/transactions` (`qbd.transactions.list`) *paginated, async mode*: List transactions
 - `Task<Transaction> RetrieveAsync(string id)`  
   `GET /v1/quickbooks-desktop/transactions/{id}` (`qbd.transactions.retrieve`) *async mode*: Retrieve a transaction
-- `Task<ClearedStatus> UpdateClearedStatusAsync(string id, ClearedStatusUpdateInput input)`  
+- `Task<TransactionClearedStatus> UpdateClearedStatusAsync(string id, ClearedStatusUpdateInput input)`  
   `POST /v1/quickbooks-desktop/transactions/{id}/cleared-status` (`qbd.transactions.updateClearedStatus`) *async mode*: Update the cleared status of a transaction
 
 ## client.Qbd.Transfers
@@ -1178,8 +1178,6 @@ Unit of measure sets.
 
 - `Task<UnitOfMeasureSet> CreateAsync(UnitOfMeasureSetCreateInput input)`  
   `POST /v1/quickbooks-desktop/unit-of-measure-sets` (`qbd.unitOfMeasureSets.create`) *async mode*: Create an unit of measure set
-- `Task<UnitOfMeasureSetDeleted> DeleteAsync(string id, UnitOfMeasureSetDeleteParams parameters)`  
-  `DELETE /v1/quickbooks-desktop/unit-of-measure-sets/{id}` (`qbd.unitOfMeasureSets.delete`) *async mode*: Delete an unit of measure set
 - `Task<UnitOfMeasureSetList> ListAsync(UnitOfMeasureSetListParams? parameters = null)`  
   `GET /v1/quickbooks-desktop/unit-of-measure-sets` (`qbd.unitOfMeasureSets.list`) *async mode*: List unit of measure sets
 - `Task<UnitOfMeasureSet> RetrieveAsync(string id)`  

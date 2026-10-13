@@ -136,8 +136,8 @@ public class ApiException : DaapiException
     /// <summary>Whether repeating the identical request (with the same idempotency key) can succeed.</summary>
     public bool? Retryable => Error?.Retryable;
 
-    /// <summary>Whether a write took effect: <c>applied</c>, <c>not_applied</c>, <c>pending</c>, <c>unknown</c> or <c>not_applicable</c>.</summary>
-    public string? Outcome => Error?.Outcome;
+    /// <summary>Whether a write took effect: <see cref="Models.Outcome.Applied"/>, <c>NotApplied</c>, <c>Pending</c>, <c>Unknown</c> or <c>NotApplicable</c> (an open enum).</summary>
+    public Outcome? Outcome => Error?.Outcome;
 
     /// <summary>The request field, query parameter or header the error refers to.</summary>
     public string? Param => Error?.Param;
@@ -169,6 +169,9 @@ public class InvalidRequestException : ApiException
 /// <see cref="LastUpdatedAt"/>: QuickBooks returns records in its own order, not by <c>updatedAt</c>,
 /// so records not yet read can be older. An incremental sync keeps the <c>UpdatedAfter</c> watermark
 /// of its previous completed sync until the whole traversal finishes (pagination guide).
+/// It derives from <see cref="InvalidRequestException"/> because the API classifies
+/// <c>CURSOR_EXPIRED</c> as <c>INVALID_REQUEST_ERROR</c> (exception classes follow <c>error.type</c>),
+/// although its status is 410: catch it first when you handle the two differently.
 /// </summary>
 public sealed class CursorExpiredException : InvalidRequestException
 {
@@ -203,8 +206,63 @@ public sealed class CursorExpiredException : InvalidRequestException
     /// <summary><c>updatedAt</c> of the last item yielded, exactly as the API sent it, or <c>null</c>.</summary>
     public string? LastUpdatedAt { get; }
 
-    /// <summary>Why the cursor expired: <c>idle_timeout</c>, <c>session_ended</c>, <c>quickbooks_restarted</c> or <c>evicted</c>.</summary>
-    public string? Reason => Details.TryGetValue("reason", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    /// <summary>Why the cursor expired (<c>details.reason</c>), or <c>null</c> when the API sent none.</summary>
+    public CursorExpiredReason? Reason => Details.TryGetValue("reason", out var v) && v.ValueKind == JsonValueKind.String ? new CursorExpiredReason(v.GetString()!) : null;
+}
+
+/// <summary>
+/// Why a cursor expired (<see cref="CursorExpiredException.Reason"/>), an open enum: compare with the
+/// static properties; a value added after this SDK version is kept in <see cref="Value"/>.
+/// </summary>
+public readonly struct CursorExpiredReason : IEquatable<CursorExpiredReason>, IOpenEnumValue
+{
+    private readonly string? _value;
+
+    /// <summary>The QuickBooks iterator was idle longer than the cursor lifetime.</summary>
+    public static CursorExpiredReason IdleTimeout { get; } = new("idle_timeout");
+
+    /// <summary>The Web Connector session that held the iterator ended.</summary>
+    public static CursorExpiredReason SessionEnded { get; } = new("session_ended");
+
+    /// <summary>QuickBooks restarted and discarded the iterator.</summary>
+    public static CursorExpiredReason QuickbooksRestarted { get; } = new("quickbooks_restarted");
+
+    /// <summary>A newer cursor list for the same end user evicted it.</summary>
+    public static CursorExpiredReason Evicted { get; } = new("evicted");
+
+    /// <summary>Wraps a wire value, known or not.</summary>
+    /// <param name="value">The wire value.</param>
+    public CursorExpiredReason(string value) => _value = value ?? throw new ArgumentNullException(nameof(value));
+
+    /// <inheritdoc/>
+    public string Value => _value ?? "";
+
+    /// <inheritdoc/>
+    public bool IsKnown => Value is "idle_timeout" or "session_ended" or "quickbooks_restarted" or "evicted";
+
+    /// <inheritdoc/>
+    public bool Equals(CursorExpiredReason other) => string.Equals(Value, other.Value, StringComparison.Ordinal);
+
+    /// <inheritdoc/>
+    public override bool Equals(object? obj) => obj is CursorExpiredReason other && Equals(other);
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Value);
+
+    /// <inheritdoc/>
+    public override string ToString() => Value;
+
+    /// <summary>Equality by wire value.</summary>
+    /// <param name="left">A value.</param>
+    /// <param name="right">A value.</param>
+    /// <returns>Whether the wire values are equal.</returns>
+    public static bool operator ==(CursorExpiredReason left, CursorExpiredReason right) => left.Equals(right);
+
+    /// <summary>Inequality by wire value.</summary>
+    /// <param name="left">A value.</param>
+    /// <param name="right">A value.</param>
+    /// <returns>Whether the wire values differ.</returns>
+    public static bool operator !=(CursorExpiredReason left, CursorExpiredReason right) => !left.Equals(right);
 }
 
 /// <summary><c>AUTHENTICATION_ERROR</c>: the API key is missing, invalid or revoked.</summary>

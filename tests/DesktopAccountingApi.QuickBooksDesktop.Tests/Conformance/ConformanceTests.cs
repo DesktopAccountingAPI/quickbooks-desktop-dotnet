@@ -173,7 +173,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             case ("qbd.invoices.create", "enqueue"):
                 {
                     var handle = await client.Qbd.Invoices.Enqueue.CreateAsync(Params<InvoiceCreateInput>(call)!, options);
-                    observed.Handle = (handle.Id, handle.Request.Status);
+                    observed.Handle = (handle.Id, handle.Request.Status.Value);
                     var wait = call.GetProperty("wait").GetProperty("timeoutMs").GetInt32();
                     observed.Result = await handle.WaitAsync(TimeSpan.FromMilliseconds(wait));
                     break;
@@ -192,6 +192,9 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
                 break;
             case ("qbd.entities.retrieve", "call"):
                 observed.Result = await client.Qbd.Entities.RetrieveAsync(PathParam(call, "id"), options);
+                break;
+            case ("qbd.vehicleMileage.retrieve", "call"):
+                observed.Result = await client.Qbd.VehicleMileage.RetrieveAsync(PathParam(call, "id"), options);
                 break;
             case ("qbd.customers.retrieve", "call"):
                 observed.Result = await client.Qbd.Customers.RetrieveAsync(PathParam(call, "id"), options);
@@ -342,7 +345,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             actual["requestId"] = api.RequestId;
             actual["param"] = api.Param;
             actual["retryable"] = api.Retryable;
-            actual["outcome"] = api.Outcome;
+            actual["outcome"] = api.Outcome?.Value;
             actual["integrationCode"] = api.IntegrationCode;
             actual["cause"] = api.Cause;
             actual["docsUrl"] = api.DocsUrl;

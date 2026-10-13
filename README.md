@@ -2,7 +2,7 @@
 
 The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountingapi.com/), a REST API for QuickBooks Desktop and QuickBooks Enterprise. Your server makes typed calls such as `client.Qbd.Invoices.CreateAsync(...)`, and Desktop Accounting API delivers them to your customer's company file through the QuickBooks Web Connector.
 
-- Covers all 439 operations of API 1.0.0: QuickBooks objects and reports (`client.Qbd`), end users, auth sessions, request tracking, qbXML passthrough and webhook verification.
+- Covers all 438 operations of API 1.0.0: QuickBooks objects and reports (`client.Qbd`), end users, auth sessions, request tracking, qbXML passthrough and webhook verification.
 - Models for every object, nullable annotations, `async` methods with `CancellationToken`, `IAsyncEnumerable` pagination and typed exceptions for every error type.
 - Amounts are `decimal`, sent with their scale preserved.
 - Every write carries an idempotency key, retries happen only where they cannot duplicate data, and an expired QuickBooks cursor never restarts a list silently.
@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.7.0**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.8.0**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.7.0
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.8.0
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.7.0" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.8.0" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -319,6 +319,16 @@ catch (CursorExpiredException ex)
 
 Lists without pagination (accounts, classes, terms and other small lists) return their list envelope directly. The [pagination guide](https://www.desktopaccountingapi.com/docs/guides/pagination/) explains cursor lifetimes.
 
+### Required arguments and confirmations
+
+- Required properties are checked when the request is sent: a missing one throws `DaapiException` naming it, before anything is sent. The SDK does not validate values itself (lengths, formats, combinations of filters): the API checks every request and answers `400 INVALID_PARAMETER`, naming the parameter, before anything reaches QuickBooks.
+- Destructive operations take the confirmation in the constructor, so it cannot be forgotten: `new CustomerDeleteParams(Confirm.Yes)`, `new ListMergeInput(Confirm.Yes) { RevisionNumber = ..., MergeIntoId = ..., MergeIntoRevisionNumber = ... }`.
+- Enums are value types: closed request enums are C# `enum`s, open enums `readonly struct`s with a static property per known value (`LeadStatus.Hot`). A value added after this SDK version reads without failing; `IsKnown` is then false and `Value` holds it.
+- Transaction deletes and voids take no confirmation, as in Conductor. Deleting a list record, merging two records and deleting a custom field definition do, because they cannot be undone.
+- A list-record delete answers `deleted: true` only when QuickBooks removed the record. QuickBooks Desktop can accept the delete and keep the record inactive: then `deleted` is false and `deactivated` is true.
+- Quantities (`quantityCanBuild`, `totalMiles`, line quantities) can have decimals: QuickBooks stores them as decimal quantities, and units of measure allow fractions.
+- `CursorExpiredException` derives from `InvalidRequestException`, because the API classifies `CURSOR_EXPIRED` as `INVALID_REQUEST_ERROR`. Catch it first when you handle the two differently; `Reason` is a `CursorExpiredReason`.
+
 ## Errors
 
 Every exception derives from `DaapiException`:
@@ -492,7 +502,7 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The API is versioned in its path (`/v1`). Within `v1` the API only adds operations, fields, enum values and error codes. Unknown fields are kept and unknown enum values pass through, so older SDK versions keep working.
-- `.daapi-sdk.json` records the API contract digest (sha256 `f4cd9b5c733e...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `149fc7b0599d...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 
