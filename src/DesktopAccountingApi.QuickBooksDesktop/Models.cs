@@ -23,6 +23,32 @@ public abstract class ApiObject
     public string ToJson() => JsonSerializer.Serialize(this, GetType(), DesktopAccountingApiJson.Options);
 }
 
+/// <summary>
+/// A value of an open enum: a generated <c>readonly struct</c> with one static property per known value
+/// (for example <c>LeadStatus.Hot</c>). It also holds values added to the API after this SDK version,
+/// so reading a response never fails on a new value. Compare values with <c>==</c>; a string converts
+/// implicitly.
+/// </summary>
+public interface IOpenEnumValue
+{
+    /// <summary>The wire value.</summary>
+    string Value { get; }
+
+    /// <summary>Whether this SDK version knows the value.</summary>
+    bool IsKnown { get; }
+}
+
+/// <summary>
+/// The argument that confirms a destructive request (a list-object delete, a merge or a custom field
+/// definition delete): <c>new CustomerDeleteParams(Confirm.Yes)</c>. It is the API's
+/// <c>confirm=true</c>, required at compile time so the request cannot be sent by accident.
+/// </summary>
+public enum Confirm
+{
+    /// <summary>The change is intended: sends <c>confirm: true</c>.</summary>
+    Yes,
+}
+
 /// <summary>Describes one property of an <see cref="InputObject"/>.</summary>
 public sealed class InputField
 {
@@ -198,6 +224,7 @@ public abstract class InputObject
         DateOnly d => DateOnlyConverter.Format(d),
         DateTimeOffset t => DateTimeOffsetConverter.Format(t),
         Enum e => WireEnum.ToWire(e),
+        IOpenEnumValue e => e.Value,
         _ => throw new DaapiException($"Cannot send a {value.GetType().Name} as a query parameter."),
     };
 
@@ -225,7 +252,8 @@ public sealed class InputObjectConverter : JsonConverterFactory
     {
         public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            var value = (T)Activator.CreateInstance(typeToConvert)!;
+            // Inputs with a Confirm constructor keep a private parameterless one for reading.
+            var value = (T)Activator.CreateInstance(typeToConvert, nonPublic: true)!;
             value.ReadJson(ref reader, options);
             return value;
         }

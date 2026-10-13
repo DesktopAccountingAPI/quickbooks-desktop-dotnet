@@ -335,27 +335,26 @@ internal sealed class ApiCore
     internal static bool TryResolve<T>(Request request, Func<string, T> parse, out T result)
     {
         result = default!;
-        switch (request.Status)
+        var status = request.Status;
+        if (status == RequestStatus.Succeeded)
         {
-            case RequestStatus.Succeeded:
-                // QuickBooks answered, but the API could not map the answer (for example
-                // QBD_RESPONSE_UNREADABLE, outcome applied): throw that catalog error (codex review #4).
-                if (request.Error is not null) throw ErrorFactory.Create(request.Error.HttpStatusCode, request.Error, null, $"Request {request.Id} succeeded, but its result could not be read.");
-                if (request.Result is not { } value || value.ValueKind == JsonValueKind.Null)
-                {
-                    throw new DaapiException(request.ResultExpired
-                        ? $"Request {request.Id} succeeded, but its result is past the retention period."
-                        : $"Request {request.Id} succeeded without a result.");
-                }
-                result = parse(value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText());
-                return true;
-            case RequestStatus.Failed:
-            case RequestStatus.Canceled:
-            case RequestStatus.OutcomeUnknown:
-                throw ErrorFactory.Create(request.Error?.HttpStatusCode, request.Error, null, $"Request {request.Id} ended with status {request.Status}.");
-            default:
-                return false;
+            // QuickBooks answered, but the API could not map the answer (for example
+            // QBD_RESPONSE_UNREADABLE, outcome applied): throw that catalog error (codex review #4).
+            if (request.Error is not null) throw ErrorFactory.Create(request.Error.HttpStatusCode, request.Error, null, $"Request {request.Id} succeeded, but its result could not be read.");
+            if (request.Result is not { } value || value.ValueKind == JsonValueKind.Null)
+            {
+                throw new DaapiException(request.ResultExpired
+                    ? $"Request {request.Id} succeeded, but its result is past the retention period."
+                    : $"Request {request.Id} succeeded without a result.");
+            }
+            result = parse(value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText());
+            return true;
         }
+        if (status == RequestStatus.Failed || status == RequestStatus.Canceled || status == RequestStatus.OutcomeUnknown)
+        {
+            throw ErrorFactory.Create(request.Error?.HttpStatusCode, request.Error, null, $"Request {request.Id} ended with status {request.Status}.");
+        }
+        return false;
     }
 
     // ------------------------------------------------------------ transport
@@ -479,7 +478,7 @@ internal sealed class ApiCore
         var header = raw.Header("Daapi-Should-Retry");
         if (string.Equals(header, "false", StringComparison.OrdinalIgnoreCase)) return false;
         var error = ErrorFactory.FromResponse(raw.Status, raw.Headers, raw.Body);
-        if (error.Outcome is ErrorOutcome.Unknown or ErrorOutcome.Pending) return false;
+        if (error.Outcome == Outcome.Unknown || error.Outcome == Outcome.Pending) return false;
         if (PendingRequestId(raw.Status, error) is not null) return false;
         if (raw.Status == 429) return true;
         return raw.Status >= 500 && string.Equals(header, "true", StringComparison.OrdinalIgnoreCase);

@@ -257,7 +257,8 @@ public class ClientTests
         Assert.Equal(1, ex.PagesServed);
         Assert.Equal("1", ex.LastId);
         Assert.Equal("2026-10-05T09:12:03-07:00", ex.LastUpdatedAt);
-        Assert.Equal("evicted", ex.Reason);
+        Assert.Equal(CursorExpiredReason.Evicted, ex.Reason);
+        Assert.True(ex.Reason!.Value.IsKnown);
         Assert.Equal(410, ex.Status);
     }
 
