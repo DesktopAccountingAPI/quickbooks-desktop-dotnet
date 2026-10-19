@@ -42,6 +42,9 @@ internal sealed class ApiCore
     internal static readonly OperationInfo RequestsRetrieve = new("requests.retrieve", "GET", write: false, requiresEndUser: false, serverTimeout: false, queueTtl: false);
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(8);
 
+    /// <summary>Longest wait <c>Task.Delay</c> accepts on every target (about 24.8 days). A longer <c>Retry-After</c> is not waited out: the error is returned.</summary>
+    private static readonly TimeSpan MaxRetryWait = TimeSpan.FromMilliseconds(int.MaxValue);
+
     private readonly HttpClient _http;
     private readonly string _authorization;
 
@@ -408,7 +411,8 @@ internal sealed class ApiCore
                     Log(DaapiLogLevel.Debug, $"{method} {PathOf(url)} -> {raw.Status} in {started.ElapsedMilliseconds} ms (request {raw.Header("Daapi-Request-Id")})");
                     if (raw.Success || attempt >= call.MaxRetries || !ShouldRetry(raw)) return raw;
                     var delay = RetryAfter(raw.Header("Retry-After")) ?? Backoff(attempt);
-                    if (call.Remaining is { } left && delay >= left) return raw;
+                    // Retry-After is waited out in full or not at all: never retry sooner than the server asked.
+                    if (delay > MaxRetryWait || (call.Remaining is { } left && delay >= left)) return raw;
                     Log(DaapiLogLevel.Info, $"Retrying {call.Op.Id} after HTTP {raw.Status} in {delay.TotalMilliseconds:F0} ms (attempt {attempt + 2} of {call.MaxRetries + 1}).");
                     await Delay(delay, cancellationToken).ConfigureAwait(false);
                     continue;

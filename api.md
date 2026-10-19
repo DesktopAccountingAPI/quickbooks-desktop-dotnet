@@ -1,6 +1,6 @@
 # API reference
 
-Every method of `DesktopAccountingApiClient`, generated from the API contract (438 operations, contract sha256 `149fc7b0599d`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
+Every method of `DesktopAccountingApiClient`, generated from the API contract (439 operations, contract sha256 `e5fba4897290`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
 
 Every method also takes `RequestOptions? options = null` and `CancellationToken cancellationToken = default` (omitted below). Variants:
 
@@ -48,6 +48,8 @@ End users.
   `POST /v1/end-users/{id}/passthrough/{integrationSlug}` (`endUsers.passthrough`) *async mode*: Send a raw qbXML request
 - `Task<string> PassthroughXmlAsync(string id, string xml)`  
   Same operation with a raw qbXML body (`Content-Type: application/xml`).
+- `Task<EndUserConnection> RemoveConnectionInstallAsync(string id, string installId)`  
+  `POST /v1/end-users/{id}/connection/installs/{installId}/remove` (`endUsers.removeConnectionInstall`): Remove a Web Connector install
 - `Task<EndUser> ResetCompanyFileAsync(string id, EndUserResetCompanyFileInput input)`  
   `POST /v1/end-users/{id}/reset-company-file` (`endUsers.resetCompanyFile`): Reset the company file
 - `Task<EndUser> RetrieveAsync(string id)`  
