@@ -59,6 +59,7 @@ public class ErrorMappingTests
     [InlineData("0", 0.0)]
     [InlineData("2", 2.0)]
     [InlineData("1.5", 1.5)]
+    [InlineData("120", 120.0)]
     public void Retry_after_seconds(string value, double seconds)
     {
         Assert.Equal(TimeSpan.FromSeconds(seconds), ApiCore.RetryAfter(value));

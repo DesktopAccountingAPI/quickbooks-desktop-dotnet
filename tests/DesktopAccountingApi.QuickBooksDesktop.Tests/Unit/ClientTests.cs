@@ -88,6 +88,41 @@ public class ClientTests
         Assert.Null(StubHandler.Header(stub.Requests[0].Request, "Idempotency-Key"));
     }
 
+    private const string RateLimited = "{\"error\":{\"type\":\"RATE_LIMIT_ERROR\",\"code\":\"RATE_LIMITED\",\"outcome\":\"not_applied\"}}";
+
+    [Fact]
+    public async Task Long_retry_after_is_waited_in_full_within_the_total_timeout()
+    {
+        var delays = new List<TimeSpan>();
+        var stub = new StubHandler().Respond(429, RateLimited, ("Retry-After", "120")).Respond(200, "{\"id\":\"1\"}");
+        using var client = stub.Client(delays: delays);
+        await client.Qbd.Customers.RetrieveAsync("1", new RequestOptions { TotalTimeout = TimeSpan.FromMinutes(3) });
+        Assert.Equal(2, stub.Requests.Count);
+        Assert.Equal(new[] { TimeSpan.FromSeconds(120) }, delays);
+    }
+
+    [Fact]
+    public async Task Long_retry_after_beyond_the_total_timeout_returns_the_error_without_retrying()
+    {
+        var delays = new List<TimeSpan>();
+        var stub = new StubHandler().Respond(429, RateLimited, ("Retry-After", "120")).Respond(200, "{\"id\":\"1\"}");
+        using var client = stub.Client(delays: delays);
+        await Assert.ThrowsAsync<RateLimitException>(() => client.Qbd.Customers.RetrieveAsync("1", new RequestOptions { TotalTimeout = TimeSpan.FromSeconds(60) }));
+        Assert.Single(stub.Requests);
+        Assert.Empty(delays);
+    }
+
+    [Fact]
+    public async Task Retry_after_longer_than_a_timer_returns_the_error_without_retrying()
+    {
+        var delays = new List<TimeSpan>();
+        var stub = new StubHandler().Respond(429, RateLimited, ("Retry-After", (30 * 24 * 3600).ToString(System.Globalization.CultureInfo.InvariantCulture))).Respond(200, "{\"id\":\"1\"}");
+        using var client = stub.Client(delays: delays);
+        await Assert.ThrowsAsync<RateLimitException>(() => client.Qbd.Customers.RetrieveAsync("1"));
+        Assert.Single(stub.Requests);
+        Assert.Empty(delays);
+    }
+
     [Fact]
     public async Task Missing_end_user_fails_before_sending()
     {

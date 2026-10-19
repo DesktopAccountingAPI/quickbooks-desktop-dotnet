@@ -67,6 +67,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         public object? Page;
         public (string Id, string Status)? Handle;
         public (int Status, string? RequestId, IReadOnlyDictionary<string, string> Headers)? Response;
+        public List<TimeSpan> RetryDelays = new();
     }
 
     [Theory]
@@ -91,6 +92,15 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         }
         if (client is not null)
         {
+            // Scenarios with retryDelaysMs record each wait before a retry instead of sleeping.
+            if (sc.GetProperty("outcome").TryGetProperty("retryDelaysMs", out _))
+            {
+                client.Core.Delay = (d, _) =>
+                {
+                    observed.RetryDelays.Add(d);
+                    return Task.CompletedTask;
+                };
+            }
             using (client)
             {
                 try
@@ -262,6 +272,17 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         if (!outcome.TryGetProperty("error", out var expectedError) && observed.Error is not null)
         {
             throw new Xunit.Sdk.XunitException($"{name}: unexpected {observed.Error.GetType().Name}: {observed.Error.Message}");
+        }
+        if (outcome.TryGetProperty("retryDelaysMs", out var delays))
+        {
+            // Never sooner than expected (Retry-After is a minimum) and no more than 50 ms later.
+            var expectedDelays = delays.EnumerateArray().Select(d => d.GetDouble()).ToList();
+            var actualDelays = observed.RetryDelays.Select(d => d.TotalMilliseconds).ToList();
+            Assert.True(expectedDelays.Count == actualDelays.Count, $"{name}: retry delays [{string.Join(", ", actualDelays)}] ms, expected [{string.Join(", ", expectedDelays)}] ms");
+            for (var i = 0; i < expectedDelays.Count; i++)
+            {
+                Assert.True(actualDelays[i] >= expectedDelays[i] && actualDelays[i] <= expectedDelays[i] + 50, $"{name}: retry delay {i}: {actualDelays[i]} ms, expected {expectedDelays[i]} ms");
+            }
         }
         if (outcome.TryGetProperty("result", out var result))
         {
