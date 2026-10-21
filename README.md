@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.9.0**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.9.1**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.9.0
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.9.1
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.9.0" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.9.1" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -502,7 +502,7 @@ What changes beyond names: every write carries an `Idempotency-Key`, only safe f
 - The .NET, Node.js, Python and Java SDKs and the [MCP server](https://github.com/DesktopAccountingAPI/quickbooks-desktop-mcp) are released together with the same version number, generated from the same API contract.
 - Every release is listed in [CHANGELOG.md](https://github.com/DesktopAccountingAPI/quickbooks-desktop-dotnet/blob/main/CHANGELOG.md) and tagged `v<version>` on GitHub.
 - The HTTP API is versioned in its path (`/v1`) and is additive-only from launch day. After launch, a breaking change requires a new version or an announced deprecation. Additive changes include new operations, fields, enum values and error codes; accept fields and enum values you do not know. This HTTP policy is separate from SDK versioning.
-- `.daapi-sdk.json` records the API contract digest (sha256 `e5fba4897290...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
+- `.daapi-sdk.json` records the API contract digest (sha256 `7ebdb557fe6b...` for this release), the generator version and the list of generated files; `DesktopAccountingApiClient.ContractSha256` exposes the same digest at runtime.
 
 ## Support
 
