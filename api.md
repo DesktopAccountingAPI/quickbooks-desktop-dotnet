@@ -1,6 +1,6 @@
 # API reference
 
-Every method of `DesktopAccountingApiClient`, generated from the API contract (439 operations, contract sha256 `7ebdb557fe6b`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
+Every method of `DesktopAccountingApiClient`, generated from the API contract (439 operations, contract sha256 `cc10a44bbe26`). Types are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
 
 Every method also takes `RequestOptions? options = null` and `CancellationToken cancellationToken = default` (omitted below). Variants:
 
