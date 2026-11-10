@@ -31,6 +31,7 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
         ["IntegrationError"] = typeof(IntegrationException),
         ["OutcomeUnknownError"] = typeof(OutcomeUnknownException),
         ["InternalError"] = typeof(InternalException),
+        ["ResultUnavailableError"] = typeof(ResultUnavailableException),
         ["CursorExpiredError"] = typeof(CursorExpiredException),
         ["RequestPendingError"] = typeof(RequestPendingException),
         ["ApiConnectionError"] = typeof(ApiConnectionException),
@@ -379,6 +380,10 @@ public sealed class ConformanceTests : IClassFixture<MockServer>
             actual["pagesServed"] = cursor.PagesServed;
             actual["lastId"] = cursor.LastId;
             actual["lastUpdatedAt"] = cursor.LastUpdatedAt;
+        }
+        if (error is ResultUnavailableException unavailable)
+        {
+            actual["recoveredObjectId"] = unavailable.RecoveredObjectId;
         }
         if (error is RequestPendingException pending)
         {

@@ -344,6 +344,12 @@ internal sealed class ApiCore
             // QuickBooks answered, but the API could not map the answer (for example
             // QBD_RESPONSE_UNREADABLE, outcome applied): throw that catalog error (codex review #4).
             if (request.Error is not null) throw ErrorFactory.Create(request.Error.HttpStatusCode, request.Error, null, $"Request {request.Id} succeeded, but its result could not be read.");
+            // A single write the platform recovered after a lost acknowledgement: QuickBooks applied it,
+            // but its response body never arrived, so there is no result to return (review R3-03).
+            if ((request.Result is null || request.Result.Value.ValueKind == JsonValueKind.Null) && (request.Recovered || request.RecoveredObjectId is not null))
+            {
+                throw RecoveredWriteError(request);
+            }
             if (request.Result is not { } value || value.ValueKind == JsonValueKind.Null)
             {
                 throw new DaapiException(request.ResultExpired
@@ -358,6 +364,32 @@ internal sealed class ApiCore
             throw ErrorFactory.Create(request.Error?.HttpStatusCode, request.Error, null, $"Request {request.Id} ended with status {request.Status}.");
         }
         return false;
+    }
+
+    private static ResultUnavailableException RecoveredWriteError(Request request)
+    {
+        var objectId = request.RecoveredObjectId;
+        var message = $"Request {request.Id} completed and QuickBooks applied it, but its result is not available: the platform recovered the write without QuickBooks' response. "
+            + (objectId is null ? "" : $"Retrieve the object by its ID {objectId}. ")
+            + "Do not send it again.";
+        var details = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["requestId"] = JsonSerializer.SerializeToElement(request.Id),
+            ["reason"] = JsonSerializer.SerializeToElement("result_unavailable"),
+            ["recoveredObjectId"] = JsonSerializer.SerializeToElement(objectId),
+        };
+        var error = new Error
+        {
+            Type = ErrorTypes.InternalError,
+            Code = ErrorCodes.InternalError,
+            Message = message,
+            RequestId = request.Id,
+            Fixes = Array.Empty<ErrorFix>(),
+            Retryable = false,
+            Outcome = Outcome.Applied,
+            Details = details,
+        };
+        return new ResultUnavailableException(null, error, null);
     }
 
     // ------------------------------------------------------------ transport
@@ -476,13 +508,15 @@ internal sealed class ApiCore
             ? id
             : null;
 
-    /// <summary>Retry 429 and 5xx with <c>Daapi-Should-Retry: true</c>; never when the header says false, the outcome is unknown or pending, or the request is still running after the server timeout.</summary>
+    /// <summary>Retry 429 and 5xx with <c>Daapi-Should-Retry: true</c>; never when the header says false, the outcome is unknown or pending, the result of an applied write is unavailable, or the request is still running after the server timeout.</summary>
     private static bool ShouldRetry(RawResponse raw)
     {
         var header = raw.Header("Daapi-Should-Retry");
         if (string.Equals(header, "false", StringComparison.OrdinalIgnoreCase)) return false;
         var error = ErrorFactory.FromResponse(raw.Status, raw.Headers, raw.Body);
         if (error.Outcome == Outcome.Unknown || error.Outcome == Outcome.Pending) return false;
+        // The write was applied and only its result is gone: sending it again would write twice.
+        if (error is ResultUnavailableException) return false;
         if (PendingRequestId(raw.Status, error) is not null) return false;
         if (raw.Status == 429) return true;
         return raw.Status >= 500 && string.Equals(header, "true", StringComparison.OrdinalIgnoreCase);

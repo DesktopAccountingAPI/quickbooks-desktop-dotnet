@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.11.0 (2026-11-10)
+
+- A write whose outcome was unknown and that the platform later recovered (request `succeeded`, `outcome` `applied`, `recovered: true`, `result` null, `RecoveredObjectId` set) throws the new `ResultUnavailableException` from `RequestHandle<T>.WaitAsync()`, `RequestHandle<T>.ResultAsync()` and the long poll after `504 QBD_REQUEST_TIMEOUT`. They threw a plain `DaapiException` ("succeeded without a result"). It derives from `InternalException`, which is no longer sealed, and carries `RequestId`, `Outcome` `applied`, `Retryable` false and `RecoveredObjectId`; retrieve the object by that ID and do not send the write again. This holds also when the result is past retention (`resultExpired` true).
+- `500 INTERNAL_ERROR` with `details.reason` `result_unavailable` (the result is no longer available) throws `ResultUnavailableException` (`RecoveredObjectId` null) and is never retried, even when `Daapi-Should-Retry` says true. For a write that was applied (`outcome: applied`), never send it again and read the object instead; for a read (`outcome: not_applicable`), it is safe to send the read again.
+- `PriceLevelListParams.ItemId` is an alias of `ItemIds` with Conductor's name for this filter, so Conductor code ports unchanged. Both take one item ID; setting both to different values returns `400 INVALID_PARAMETER`. `BatchPriceLevelListInputQuery.ItemId` is the same for batch members.
+
 ## 0.10.0 (2026-10-27)
 
 - The request resource (`RecoveredObjectId` (`string?`, wire name `recoveredObjectId`)) names the object a write created or changed when the platform recovered that write after a lost acknowledgement. QuickBooks' response body to such a write was never received, so a request retrieved with `client.Requests.RetrieveAsync()` that shows `succeeded`, `applied` and `recovered: true` keeps `result` null: retrieve the object by this id. It is null for every other request. A typed batch recovered that way still carries each create member's own `recoveredObjectId` in `result`; the request-level field holds the first write member's.

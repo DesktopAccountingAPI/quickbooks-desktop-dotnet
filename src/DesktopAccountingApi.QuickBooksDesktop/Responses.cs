@@ -322,7 +322,9 @@ public sealed class RequestHandle<T>
     /// Long-polls <c>GET /v1/requests/{id}?waitSeconds=N</c> until the request finishes or
     /// <paramref name="timeout"/> elapses. Returns the typed result when it succeeded; throws the
     /// typed <see cref="ApiException"/> when it failed, was canceled or became <c>outcome_unknown</c>;
-    /// throws <see cref="RequestPendingException"/> when the time is up or a poll fails.
+    /// throws <see cref="ResultUnavailableException"/> (with <c>RecoveredObjectId</c>) when the write
+    /// was applied but has no result body; throws <see cref="RequestPendingException"/> when the time
+    /// is up or a poll fails.
     /// </summary>
     /// <param name="timeout">How long to wait. Default: the client timeout.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
@@ -330,7 +332,7 @@ public sealed class RequestHandle<T>
     public Task<T> WaitAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default) =>
         _core.WaitForResultAsync(Id, Request, _parse, timeout, _options, IdempotencyKey, cancellationToken);
 
-    /// <summary>Checks once: returns the result if the request succeeded, throws its typed error if it failed, or throws <see cref="RequestPendingException"/> if it has not finished.</summary>
+    /// <summary>Checks once: returns the result if the request succeeded, throws its typed error if it failed, throws <see cref="ResultUnavailableException"/> if the write was applied but has no result body, or throws <see cref="RequestPendingException"/> if it has not finished.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The operation's result.</returns>
     public async Task<T> ResultAsync(CancellationToken cancellationToken = default)

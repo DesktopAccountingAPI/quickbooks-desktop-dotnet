@@ -3,7 +3,10 @@ name: Publish
 # Releases DesktopAccountingAPI.QuickBooksDesktop to nuget.org with NuGet trusted publishing
 # (GitHub OIDC -> short-lived API key; policy "desktopaccountingapi-sdk-publishing", package glob
 # DesktopAccountingAPI.*). The policy is bound to this file name, so keep it as publish.yml.
-# Re-running is safe: a version that is already on nuget.org is not uploaded again.
+# Re-running is safe: a version already on nuget.org is not checked, packed or uploaded again. The
+# release is complete when nuget.org serves the main package. The symbols package is best effort: it
+# is uploaded only in the run that uploads the main package, and if that upload fails the run warns
+# and continues; no later run retries it.
 
 on:
   push:
@@ -40,15 +43,17 @@ jobs:
       - name: Tag matches the package version
         run: node scripts/publish.mjs verify-tag
 
-      - name: Full check (build, tests, conformance, examples, package)
-        run: mise run check
-
-      - name: Pack release artifacts
-        run: node scripts/publish.mjs pack
-
       - name: Is this version already on nuget.org?
         id: registry
         run: node scripts/publish.mjs exists
+
+      - name: Full check (build, tests, conformance, examples, package)
+        if: steps.registry.outputs.published != 'true'
+        run: mise run check
+
+      - name: Pack release artifacts
+        if: steps.registry.outputs.published != 'true'
+        run: node scripts/publish.mjs pack
 
       - name: NuGet login (OIDC)
         if: steps.registry.outputs.published != 'true'

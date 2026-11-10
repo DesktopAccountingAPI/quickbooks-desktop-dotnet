@@ -314,6 +314,25 @@ public class ClientTests
         Assert.Equal("7-1700000000", (await handle.ResultAsync()).Id);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Result_of_recovered_write_throws_ResultUnavailableException_with_object_id(bool resultExpired)
+    {
+        const string queued = "{\"id\":\"req_1\",\"objectType\":\"request\",\"status\":\"queued\",\"result\":null}";
+        var recovered = "{\"id\":\"req_1\",\"objectType\":\"request\",\"status\":\"succeeded\",\"outcome\":\"applied\",\"result\":null,\"resultExpired\":" + (resultExpired ? "true" : "false") + ",\"recovered\":true,\"recoveredObjectId\":\"8000000C-1700000000\"}";
+        var stub = new StubHandler().Respond(202, queued).Respond(200, recovered);
+        using var client = stub.Client();
+        var handle = await client.Qbd.Invoices.Enqueue.CreateAsync(NewInvoice(), new RequestOptions { IdempotencyKey = "key-1" });
+        var ex = await Assert.ThrowsAsync<ResultUnavailableException>(() => handle.ResultAsync());
+        Assert.IsAssignableFrom<InternalException>(ex);
+        Assert.Equal("req_1", ex.RequestId);
+        Assert.Equal(Outcome.Applied, ex.Outcome);
+        Assert.Equal("8000000C-1700000000", ex.RecoveredObjectId);
+        Assert.False(ex.Retryable);
+        Assert.Equal("key-1", ex.IdempotencyKey);
+    }
+
     [Fact]
     public async Task Failed_request_raises_the_typed_error_from_the_request()
     {

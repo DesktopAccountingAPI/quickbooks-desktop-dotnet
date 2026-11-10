@@ -336,13 +336,38 @@ public sealed class OutcomeUnknownException : ApiException
 }
 
 /// <summary><c>INTERNAL_ERROR</c>: an unexpected server error.</summary>
-public sealed class InternalException : ApiException
+public class InternalException : ApiException
 {
     /// <inheritdoc cref="ApiException(int?, Error?, IReadOnlyDictionary{string, string}?, string?)"/>
     public InternalException(int? status, Error? error, IReadOnlyDictionary<string, string>? headers, string? fallbackMessage = null)
         : base(status, error, headers, fallbackMessage)
     {
     }
+}
+
+/// <summary>
+/// The result is no longer available. For a write that was applied (<see cref="ApiException.Outcome"/>
+/// <c>applied</c>), never send it again: read the object instead, by <see cref="RecoveredObjectId"/>
+/// when it is set (the platform recovered the write after a lost acknowledgement), or by your
+/// <c>externalId</c> or <c>refNumber</c>. For a read (<c>not_applicable</c>), it is safe to send the
+/// read again. Thrown for a recovered write (<c>result</c> null) and for <c>500 INTERNAL_ERROR</c>
+/// with <c>details.reason</c> <c>result_unavailable</c>. The SDK never retries it. It derives from
+/// <see cref="InternalException"/> because the API classifies it as <c>INTERNAL_ERROR</c>.
+/// </summary>
+public sealed class ResultUnavailableException : InternalException
+{
+    /// <inheritdoc cref="ApiException(int?, Error?, IReadOnlyDictionary{string, string}?, string?)"/>
+    public ResultUnavailableException(int? status, Error? error, IReadOnlyDictionary<string, string>? headers, string? fallbackMessage = null)
+        : base(status, error, headers, fallbackMessage)
+    {
+    }
+
+    /// <summary>QuickBooks ID of the object the write created or changed (<c>details.recoveredObjectId</c>), or <c>null</c> when the API did not name one.</summary>
+    public string? RecoveredObjectId =>
+        Details.TryGetValue("recoveredObjectId", out var v) && v.ValueKind == JsonValueKind.String && v.GetString() is { Length: > 0 } id ? id : null;
+
+    internal static bool Matches(Error error) =>
+        error.Details is { } details && details.TryGetValue("reason", out var reason) && reason.ValueKind == JsonValueKind.String && reason.GetString() == "result_unavailable";
 }
 
 /// <summary>No response arrived: connection failure, reset or dropped connection. Thrown after the SDK's retries are exhausted.</summary>
@@ -466,6 +491,7 @@ internal static class ErrorFactory
             ErrorTypes.IntegrationConnectionError => new IntegrationConnectionException(status, error, headers, fallback),
             ErrorTypes.IntegrationError => new IntegrationException(status, error, headers, fallback),
             ErrorTypes.OutcomeUnknownError => new OutcomeUnknownException(status, error, headers, fallback),
+            ErrorTypes.InternalError when ResultUnavailableException.Matches(error) => new ResultUnavailableException(status, error, headers, fallback),
             ErrorTypes.InternalError => new InternalException(status, error, headers, fallback),
             _ => new ApiException(status, error, headers, fallback),
         };

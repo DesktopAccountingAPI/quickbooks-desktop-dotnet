@@ -4,7 +4,7 @@
 //   node scripts/publish.mjs verify-tag [--tag v0.1.0]   tag (or GITHUB_REF_NAME) must equal the csproj <Version>
 //   node scripts/publish.mjs pack                        dotnet pack into artifacts/release and inspect the package
 //   node scripts/publish.mjs exists                      is this version on nuget.org? (writes published=true|false to GITHUB_OUTPUT)
-//   node scripts/publish.mjs push [--dry-run]            upload .nupkg and .snupkg (API key from NUGET_API_KEY), skipping duplicates
+//   node scripts/publish.mjs push [--dry-run]            unless nuget.org lists the version: upload .nupkg, then .snupkg best effort (API key from NUGET_API_KEY)
 //   node scripts/publish.mjs wait [--timeout-minutes 45] poll nuget.org until the version resolves
 //   node scripts/publish.mjs smoke [--source <dir>]      install the version into a temporary console app and run it
 //   node scripts/publish.mjs release [--dry-run]         all of the above in order
@@ -104,6 +104,7 @@ async function endpoints() {
   return { pkg, symbols };
 }
 
+// Returns "uploaded" when nuget.org accepted this upload, "skipped" when it already had the version (409).
 async function upload(url, file, apiKey) {
   const form = new FormData();
   form.append("package", new Blob([readFileSync(file)]), "package.nupkg");
@@ -111,12 +112,13 @@ async function upload(url, file, apiKey) {
   const text = await res.text();
   if (res.status === 409) {
     console.log(`${file}: this version already exists on nuget.org; skipped`);
-    return;
+    return "skipped";
   }
   if (res.status !== 201 && res.status !== 202 && res.status !== 200) {
     throw new Error(`upload of ${file} failed: HTTP ${res.status} ${text.slice(0, 500)}`);
   }
   console.log(`${file}: uploaded (HTTP ${res.status})`);
+  return "uploaded";
 }
 
 async function push() {
@@ -127,14 +129,26 @@ async function push() {
     console.log(`dry run: would PUT ${snupkg} to ${symbols}`);
     return;
   }
+  // A release is complete once nuget.org serves the main package. Symbols are best effort and are
+  // only ever uploaded in the run that uploads the main package: a version that is already served
+  // uploads nothing, so a re-run never replaces served symbols with a rebuilt package.
   if (await published()) {
-    console.log(`${PACKAGE_ID} ${version()} is already on nuget.org; nothing to upload`);
+    console.log(`${PACKAGE_ID} ${version()} is already published on nuget.org; nothing to upload`);
     return;
   }
   const apiKey = process.env.NUGET_API_KEY;
   if (!apiKey) throw new Error("NUGET_API_KEY is not set (the NuGet/login step provides it)");
-  await upload(pkg, nupkg, apiKey);
-  await upload(symbols, snupkg, apiKey);
+  if ((await upload(pkg, nupkg, apiKey)) !== "uploaded") {
+    // A 409: an earlier or concurrent run uploaded this version, so its symbols are not this run's to send.
+    console.log(`the symbols package for ${PACKAGE_ID} ${version()} was not uploaded: this run did not upload the main package (symbols are best effort; the release continues)`);
+    return;
+  }
+  try {
+    await upload(symbols, snupkg, apiKey);
+  } catch (err) {
+    // A failed symbols upload never fails or blocks the release, and no later run retries it.
+    console.log(`warning: the symbols package for ${PACKAGE_ID} ${version()} was not uploaded: ${err instanceof Error ? err.message : String(err)} (symbols are best effort; the release continues and no later run retries them)`);
+  }
 }
 
 async function wait() {
