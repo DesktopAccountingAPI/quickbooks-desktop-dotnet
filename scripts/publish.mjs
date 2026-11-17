@@ -5,7 +5,7 @@
 //   node scripts/publish.mjs pack                        dotnet pack into artifacts/release and inspect the package
 //   node scripts/publish.mjs exists                      is this version on nuget.org? (writes published=true|false to GITHUB_OUTPUT)
 //   node scripts/publish.mjs push [--dry-run]            unless nuget.org lists the version: upload .nupkg, then .snupkg best effort (API key from NUGET_API_KEY)
-//   node scripts/publish.mjs wait [--timeout-minutes 45] poll nuget.org until the version resolves
+//   node scripts/publish.mjs wait [--timeout-minutes 45] poll nuget.org until the version resolves (a failed poll or a 5xx counts as not listed yet)
 //   node scripts/publish.mjs smoke [--source <dir>]      install the version into a temporary console app and run it
 //   node scripts/publish.mjs release [--dry-run]         all of the above in order
 //
@@ -77,11 +77,11 @@ function artifacts() {
   return { nupkg: join(OUT, nupkg), snupkg: join(OUT, snupkg) };
 }
 
-async function published() {
+async function published({ signal } = {}) {
   const v = version();
-  const res = await fetch(FLAT, { headers: { "Cache-Control": "no-cache" } });
+  const res = await fetch(FLAT, { headers: { "Cache-Control": "no-cache" }, signal });
   if (res.status === 404) return false;
-  if (!res.ok) throw new Error(`GET ${FLAT}: HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`GET ${FLAT}: HTTP ${res.status}`), { status: res.status });
   const body = await res.json();
   return (body.versions ?? []).includes(v.toLowerCase());
 }
@@ -157,15 +157,27 @@ async function wait() {
     return;
   }
   const minutes = Number(option("timeout-minutes", "45"));
+  const intervalMs = Number(option("interval-seconds", "30")) * 1000;
   const deadline = Date.now() + minutes * 60_000;
   for (let attempt = 1; ; attempt++) {
-    if (await published()) {
+    // A thrown request (network error, timeout) or a 5xx is transient: it counts as "not listed yet"
+    // and polling continues until the deadline. One such failure ended the 0.11.0 publish run.
+    // Any other answer (a 4xx other than 404) still stops the wait.
+    let listed = false;
+    try {
+      listed = await published({ signal: AbortSignal.timeout(30_000) });
+    } catch (err) {
+      if (err?.status !== undefined && err.status < 500) throw err;
+      const reason = err?.status !== undefined ? `HTTP ${err.status}` : `${err?.name ?? "Error"}: ${err?.message ?? String(err)}`;
+      console.log(`poll failed (${reason}); counting it as not listed yet`);
+    }
+    if (listed) {
       console.log(`${PACKAGE_ID} ${version()} resolves on nuget.org`);
       return;
     }
     if (Date.now() > deadline) throw new Error(`${PACKAGE_ID} ${version()} did not appear on nuget.org within ${minutes} minutes (validation and indexing can take longer; re-run the workflow to resume)`);
     console.log(`waiting for nuget.org to list ${version()} (attempt ${attempt})`);
-    await new Promise((r) => setTimeout(r, 30_000));
+    await new Promise((r) => setTimeout(r, intervalMs));
   }
 }
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.11.1 (2026-11-17)
+
+- No change to the package. The release workflow keeps waiting for nuget.org when a check fails with a network error or a 5xx answer, until its 45-minute limit. One such failure stopped the 0.11.0 release run.
+
 ## 0.11.0 (2026-11-10)
 
 - A write whose outcome was unknown and that the platform later recovered (request `succeeded`, `outcome` `applied`, `recovered: true`, `result` null, `RecoveredObjectId` set) throws the new `ResultUnavailableException` from `RequestHandle<T>.WaitAsync()`, `RequestHandle<T>.ResultAsync()` and the long poll after `504 QBD_REQUEST_TIMEOUT`. They threw a plain `DaapiException` ("succeeded without a result"). It derives from `InternalException`, which is no longer sealed, and carries `RequestId`, `Outcome` `applied`, `Retryable` false and `RecoveredObjectId`; retrieve the object by that ID and do not send the write again. This holds also when the result is past retention (`resultExpired` true).
