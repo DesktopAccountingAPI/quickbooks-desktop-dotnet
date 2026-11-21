@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.12.0 (2026-11-21)
+
+- `IntegrationConnection` (in `EndUser.IntegrationConnections`) and `EndUserConnection` (from `client.EndUsers.RetrieveConnectionAsync()` and the disable and enable calls) have `Simulated` (`bool`): `true` for the hosted sample company, which answers from recordings of real QuickBooks Desktop; `false` for a company file connected through the Web Connector.
+- New error code `SAMPLE_COMPANY_UNSUPPORTED` (422, not retryable, outcome `not_applied`), thrown as `InvalidRequestException`: the sample company has no recorded answer for this request. `details.reason` says why, `details.element` names the qbXML element, and `details.detail` says what works, when the request has a working alternative. The message often says what works. Nothing changes. Do not retry it.
+- Documentation corrections, no behavior change: on `Bill`, `OpenAmount` is the vendor's open balance as QuickBooks returns it (the same on every bill from that vendor), and `AmountDue` is the bill's total, which stays the same as payments are applied (`IsPaid` says whether it is paid). On customers, vendors, accounts and items, `UpdatedAfter` and `UpdatedBefore` match a record when its last edit or its last change falls in the range, so `UpdatedBefore` can return records whose `UpdatedAt` is later; on inventory items QuickBooks compares the last edit only, so a quantity-on-hand change from a posted transaction does not match `UpdatedAfter`.
+
 ## 0.11.1 (2026-11-17)
 
 - No change to the package. The release workflow keeps waiting for nuget.org when a check fails with a network error or a 5xx answer, until its 45-minute limit. One such failure stopped the 0.11.0 release run.
