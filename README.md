@@ -12,16 +12,16 @@ The C# and .NET client for [Desktop Accounting API](https://www.desktopaccountin
 
 ## Install
 
-The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.12.1**:
+The package is [`DesktopAccountingAPI.QuickBooksDesktop`](https://www.nuget.org/packages/DesktopAccountingAPI.QuickBooksDesktop) on NuGet. The current version is **0.12.2**:
 
 ```sh
-dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.12.1
+dotnet add package DesktopAccountingAPI.QuickBooksDesktop --version 0.12.2
 ```
 
 Or in your project file:
 
 ```xml skip
-<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.12.1" />
+<PackageReference Include="DesktopAccountingAPI.QuickBooksDesktop" Version="0.12.2" />
 ```
 
 The namespace is `DesktopAccountingApi.QuickBooksDesktop`; models are in `DesktopAccountingApi.QuickBooksDesktop.Models`.
@@ -198,7 +198,7 @@ QuickBooks only processes requests while the end user's Web Connector is running
 
 ```csharp
 var handle = await client.Qbd.Invoices.Enqueue.CreateAsync(
-    new InvoiceCreateInput { CustomerId = "80000001-1700000000" },
+    new InvoiceCreateInput { CustomerId = "80000001-1700000000", TransactionDate = new DateOnly(2026, 10, 5) },
     new RequestOptions { QueueTtl = TimeSpan.FromHours(1), IdempotencyKey = "order-8813-invoice" });
 Console.WriteLine($"{handle.Id} is {handle.Request.Status}"); // req_... is queued
 Invoice invoice = await handle.WaitAsync(TimeSpan.FromMinutes(2)); // the typed Invoice, or the typed exception
@@ -391,7 +391,7 @@ After `504 QBD_REQUEST_TIMEOUT` the request is still queued or running at the en
 try
 {
     await client.Qbd.Invoices.CreateAsync(
-        new InvoiceCreateInput { CustomerId = "80000001-1700000000" },
+        new InvoiceCreateInput { CustomerId = "80000001-1700000000", TransactionDate = new DateOnly(2026, 10, 5) },
         new RequestOptions { IdempotencyKey = "order-8814-invoice" });
 }
 catch (RequestPendingException ex)
@@ -406,7 +406,7 @@ catch (RequestPendingException ex)
 Operations that QuickBooks runs can also be queued without waiting. Each resource with such operations has an `Enqueue` accessor with the same methods, returning a `RequestHandle<T>`:
 
 ```csharp
-var input = new InvoiceCreateInput { CustomerId = "80000001-1700000000" };
+var input = new InvoiceCreateInput { CustomerId = "80000001-1700000000", TransactionDate = new DateOnly(2026, 10, 5) };
 var handle = await client.Qbd.Invoices.Enqueue.CreateAsync(input, new RequestOptions { QueueTtl = TimeSpan.FromHours(1) });
 Console.WriteLine($"{handle.Id} is {handle.Request.Status}");
 
